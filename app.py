@@ -388,6 +388,20 @@ with tab_check:
         n = st.session_state.get("clear_count", 0)
         ad_text = st.text_area("Testo del materiale (o URL del sito/pagina)", height=100, placeholder="Incolla qui il testo dello spot / annuncio / post social, oppure un URL...", key=f"ad_text_{n}")
         ad_image = st.file_uploader("Foto / immagine (opzionale)", type=["png", "jpg", "jpeg"], key=f"ad_image_{n}")
+        rcp_file = st.file_uploader("📄 RCP del prodotto (PDF o TXT, facoltativo): sblocca la verifica automatica dei claim", type=["pdf", "txt"])
+        rcp_text = ""
+        if rcp_file:
+            try:
+                if rcp_file.name.lower().endswith(".txt"):
+                    rcp_text = rcp_file.read().decode("utf-8", "replace")
+                else:
+                    from pypdf import PdfReader
+                    import io as _io
+                    rcp_text = "\n".join(p.extract_text() or "" for p in PdfReader(_io.BytesIO(rcp_file.read())).pages)
+            except Exception as _e:
+                st.caption("⚠️ Impossibile leggere l'RCP: " + str(_e))
+        rcp_instr = "\n\nISTRUZIONI RCP: per ogni voce di claims_rcp verifica il claim contro il RCP fornito e sostituisci UNVERIFIABLE_RCP_NOT_IN_KB con CONFORME_RCP (cita sezione, es. §4.1) o VIOLAZIONE_RCP (cita sezione). I divieti assoluti di legge restano indipendenti dal RCP."
+        rcp_extra = ("\n\nRCP DEL PRODOTTO:\n" + rcp_text[:20000] + rcp_instr) if rcp_text else ""
         pseudo = st.checkbox("🔒 Pseudonimizza nomi di persone fisiche nel report (per distribuzione esterna)", value=False)
         use_claude = bool(ANTHROPIC_API_KEY)
 
@@ -464,6 +478,8 @@ with tab_check:
                             {"type": "text", "text": SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.")},
                             {"type": "text", "text": "CORPUS NORMATIVO INTEGRALE (knowledge base del cliente):\n" + corpus, "cache_control": {"type": "ephemeral"}},
                         ]
+                        if rcp_text:
+                            system_blocks.append({"type": "text", "text": "RCP DEL PRODOTTO (documento autorizzato):\n" + rcp_text[:60000] + rcp_instr})
                         live = st.empty()
                         try:
                             try:
@@ -474,14 +490,14 @@ with tab_check:
                             modello = "NEXORA Deep Engine"
                         except Exception:
                             live.text("⏳ Motore standard di riserva...")
-                            prompt = SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.") + "\nREGOLE (knowledge base caricata):\n" + rules + "\n\nMATERIALE DA ANALIZZARE:\n" + content_send
+                            prompt = SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.") + "\nREGOLE (knowledge base caricata):\n" + rules + rcp_extra + "\n\nMATERIALE DA ANALIZZARE:\n" + content_send
                             content = [{"type": "text", "text": prompt}]
                             if image_b64:
                                 content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}})
                             rep = analyze_json(content)
                             modello = "NEXORA Standard Engine"
                     else:
-                        prompt = SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.") + "\nREGOLE (knowledge base caricata):\n" + rules + "\n\nMATERIALE DA ANALIZZARE:\n" + content_send
+                        prompt = SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.") + "\nREGOLE (knowledge base caricata):\n" + rules + rcp_extra + "\n\nMATERIALE DA ANALIZZARE:\n" + content_send
                         content = [{"type": "text", "text": prompt}]
                         if image_b64:
                             content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}})
