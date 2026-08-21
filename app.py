@@ -39,6 +39,9 @@ div[data-testid="stFileUploader"] button, button[data-testid="stFileUploadButton
   background:#2563eb !important; color:#ffffff !important; border-color:#1d4ed8 !important;
 }
 div[data-testid="stVerticalBlockBorderWrapper"], div[data-testid="stContainerBlockBorderWrapper"] { border-color: #4ade80 !important; border-radius: 14px; }
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -386,11 +389,7 @@ with tab_check:
         ad_text = st.text_area("Testo del materiale (o URL del sito/pagina)", height=100, placeholder="Incolla qui il testo dello spot / annuncio / post social, oppure un URL...", key=f"ad_text_{n}")
         ad_image = st.file_uploader("Foto / immagine (opzionale)", type=["png", "jpg", "jpeg"], key=f"ad_image_{n}")
         pseudo = st.checkbox("🔒 Pseudonimizza nomi di persone fisiche nel report (per distribuzione esterna)", value=False)
-        if ANTHROPIC_API_KEY:
-            use_claude = st.radio("Motore di analisi", ["🧠 Claude Sonnet — analisi approfondita (corpus intero)", "⚡ GPT-4o — analisi standard"], horizontal=True).startswith("🧠")
-        else:
-            st.caption("⚠️ Chiave Anthropic non configurata: motore Claude non disponibile. Aggiungi ANTHROPIC_API_KEY nel file .env")
-            use_claude = False
+        use_claude = bool(ANTHROPIC_API_KEY)
 
         colA, colB = st.columns(2)
         with colA:
@@ -459,7 +458,7 @@ with tab_check:
                     image_b64 = base64.b64encode(ad_image.read()).decode()
                 try:
                     if use_claude:
-                        st.write("   🧠 Motore: Claude Sonnet (corpus integrale)...")
+                        st.write("   🧠 Analisi approfondita in corso...")
                         corpus = claude_engine.essential_corpus() + "\n\n---\n\nFAQ D&R PERTINENTI:\n" + "\n\n---\n\n".join([f"[{source_label(r)}]\n{r['chunk_text']}" for r in results])
                         system_blocks = [
                             {"type": "text", "text": SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.")},
@@ -467,17 +466,27 @@ with tab_check:
                         ]
                         live = st.empty()
                         try:
-                            rep, modello = claude_engine.ask_claude_stream(ANTHROPIC_API_KEY, system_blocks, "MATERIALE DA ANALIZZARE:\n" + content_send, image_b64, mime, on_delta=lambda s: live.text("⏳ Report in generazione...\n" + s[-600:]))
+                            try:
+                                rep, _m = claude_engine.ask_claude_stream(ANTHROPIC_API_KEY, system_blocks, "MATERIALE DA ANALIZZARE:\n" + content_send, image_b64, mime, on_delta=lambda s: live.text("⏳ Report in generazione...\n" + s[-600:]))
+                            except Exception:
+                                live.text("⏳ Nuovo tentativo (modalità batch)...")
+                                rep, _m = claude_engine.ask_claude(ANTHROPIC_API_KEY, system_blocks, "MATERIALE DA ANALIZZARE:\n" + content_send, image_b64, mime)
+                            modello = "NEXORA Deep Engine"
                         except Exception:
-                            live.text("⏳ Nuovo tentativo (modalità batch)...")
-                            rep, modello = claude_engine.ask_claude(ANTHROPIC_API_KEY, system_blocks, "MATERIALE DA ANALIZZARE:\n" + content_send, image_b64, mime)
+                            live.text("⏳ Motore standard di riserva...")
+                            prompt = SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.") + "\nREGOLE (knowledge base caricata):\n" + rules + "\n\nMATERIALE DA ANALIZZARE:\n" + content_send
+                            content = [{"type": "text", "text": prompt}]
+                            if image_b64:
+                                content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}})
+                            rep = analyze_json(content)
+                            modello = "NEXORA Standard Engine"
                     else:
                         prompt = SKILL_PROMPT + ("\nPSEUDONIMIZZA=1." if pseudo else "\nPSEUDONIMIZZA=0.") + "\nREGOLE (knowledge base caricata):\n" + rules + "\n\nMATERIALE DA ANALIZZARE:\n" + content_send
                         content = [{"type": "text", "text": prompt}]
                         if image_b64:
                             content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}})
                         rep = analyze_json(content)
-                        modello = "GPT-4o (RAG)"
+                        modello = "NEXORA Standard Engine"
                     rep = polish_obj(rep)
                     st.write(f"   ✅ Analisi completata — stato: {rep.get('stato_complessivo','')}")
                 except Exception as e:
