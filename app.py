@@ -134,6 +134,14 @@ def build_pdf(title, sections):
     pdf.set_font("Helvetica", "I", 10)
     pdf.multi_cell(0, 6, "Data di riferimento: " + datetime.now().strftime("%d/%m/%Y %H:%M"))
     pdf.set_x(pdf.l_margin)
+    try:
+        _mot = str(st.session_state.get("check_result", {}).get("model", "") or "")
+    except Exception:
+        _mot = ""
+    if _mot:
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.multi_cell(0, 6, "Motore: " + _mot)
+        pdf.set_x(pdf.l_margin)
     pdf.ln(4)
     for h, b in sections:
         pdf.set_font("Helvetica", "B", 11)
