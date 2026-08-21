@@ -365,7 +365,7 @@ def ask_llm(messages, json_mode=False, temperature=0.7, model="gpt-4o-mini"):
 # ---------- HEADER ----------
 hleft, hright = st.columns([3, 1])
 with hleft:
-    st.markdown("# 🧠 Farma Compliance · Cervello")
+    st.markdown("# 🧠 Farma Compliance · Brain")
     st.markdown('Senior Compliance Officer AI · Knowledge Base: D.Lgs 219/2006 · Codice Deontologico · FAQ &nbsp; <span class="badge green">KB ATTIVA</span>', unsafe_allow_html=True)
 with hright:
     if os.path.exists("logo.png"):
