@@ -100,7 +100,19 @@ STANDARD DELIVERABLE NEXORA (REGOLE VINCOLANTI DI OUTPUT):
 4. CLAIM DIPENDENTI DA DOCUMENTI ASSENTI: se l'esito dipende da un documento non caricato (es. RCP), NON classificarlo come violazione critica: va SOLO nella sezione claim da verificare contro RCP con esito UNVERIFIABLE_RCP_NOT_IN_KB. Vietata la duplicazione tra sezioni.
 5. TITOLI DEI RILIEVI: descrivono cio' che e' PRESENTE nel materiale (es. "Claim pediatrico non autorizzato"), mai formule inverse o sgrammaticate.
 6. COERENZA CITAZIONI: la norma citata nel corpo e quella in fonte devono coincidere esattamente; se incerto, scrivi "riferimento da verificare" e non citare.
-7. DATA ANALISI: usa solo la data corrente fornita nel messaggio; non inventare date."""
+7. DATA ANALISI: usa solo la data corrente fornita nel messaggio; non inventare date.
+
+REGOLE RIPRISTINO DETTAGLIO (REGOLE VINCOLANTI - LIVELLO 21/08):
+1. CITAZIONE LETTERALE: ogni rilievo deve riportare nel campo norma il testo letterale della disposizione tra virgolette, copiato dal corpus (es. art. 116 c.1 lett. b nn. 1-2-3 per esteso). Nel JSON includi "source_excerpt" con lo stesso estratto letterale. Se non trovi l'estratto nel corpus, lascia "source_excerpt" vuoto: il rilievo sara' declassato dal sistema a nota.
+2. DOPPIA CONTESTAZIONE: i claim che invocano raccomandazioni di farmacisti, medici o operatori sanitari vanno contestati con art. 117 c.1 lett. f E, se contengono primato o superiorita', anche con art. 117 c.1 lett. b.
+3. PEDIATRICO: se la fascia di eta' non e' autorizzata dal RCP, l'unica azione e' eliminare il claim; NON proporre "invito a consultare il medico" come sanante. Gli aggettivi di sicurezza assoluta ("sicuro", "privo di rischi") sono violazione autonoma (art. 114 c.3 e art. 117 c.1 lett. b).
+4. BUCKET RCP: nella sezione claim da verificare contro RCP vanno SOLO claim terapeutici verificabili (indicazione, fascia di eta', tempo di azione). I claim vietati in assoluto (primato, assenza di effetti collaterali, testimonianze, raccomandazioni di operatori, attestazioni di guarigione) NON vanno mai in quella sezione: sono violazioni indipendentemente dal RCP.
+5. ELEMENTI MANCANTI: verifica sempre art. 116 c.1 lett. a (identificazione come medicinale), lett. b nn. 1-2-3, art. 118 (estremi AIC), art. 114 c.3 (profilo di rischio).
+6. ORGANOLETTICI: menzioni di gusto o palatabilita' vanno valutate come avvertenza ex art. 117 c.1 lett. g (assimilazione ad alimento), mai come "immagine non analizzabile".
+7. POSIZIONI: per ogni rilievo cita la frase esatta del materiale e la collocazione precisa (pagina/paragrafo/sezione, se desumibile).
+8. AZIONI SPECIFICHE: vietate azioni circolari tipo "verificare la conformita' alle normative vigenti": ogni azione deve dire cosa eliminare o cosa aggiungere, con quale contenuto.
+9. ONE-PAGER ADDITIVO: la sintesi esecutiva si aggiunge al dettaglio completo dei rilievi, non lo sostituisce.
+10. AMBITI CONDIZIONATI: se l'esito di un rilievo dipende da un documento assente o da una variabile non determinata, includi nel JSON il campo "conditioned_by" con la ragione: il sistema lo declassera' a "da verificare"."""
 
 def source_label(r):
     doc = DOC_NAMES.get(r.get('source_doc', ''), r.get('source_doc', 'sconosciuto'))
@@ -152,6 +164,62 @@ def autoscroll(on):
 def scroll_to_report(target_id):
     html = "<script>setTimeout(function(){var d=window.parent.document;var el=d.getElementById('" + target_id + "');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}},600);</script>"
     components.html(html, height=0, width=0)
+
+def _norm_txt(t):
+    return re.sub(r"[^a-z0-9à-öø-ÿ]+", "", (t or "").lower())
+
+_KB_CACHE = {}
+def _kb_all():
+    if not _KB_CACHE:
+        import glob as _g
+        _KB_CACHE["t"] = _norm_txt("".join(open(f, encoding="utf-8", errors="replace").read() for f in sorted(_g.glob("kb/*.txt"))))
+    return _KB_CACHE["t"]
+
+def gate_citazioni(rep):
+    kb = _kb_all()
+    notes = rep.get("note_informative")
+    if not isinstance(notes, list):
+        notes = []
+    for key in ("violazioni_critiche", "violations", "avvertenze", "warnings"):
+        items = rep.get(key)
+        if not isinstance(items, list):
+            continue
+        keep = []
+        for v in items:
+            if not isinstance(v, dict):
+                keep.append(v); continue
+            exc = v.get("source_excerpt") or ""
+            if not exc:
+                mtxt = str(v.get("norma_violata") or v.get("norma") or "")
+                q = re.findall(r'"([^"]{40,})"', mtxt) or re.findall(r"'([^']{40,})'", mtxt)
+                exc = q[0] if q else ""
+            w = _norm_txt(exc)
+            ok = bool(w) and (w[:120] in kb if len(w) >= 120 else w in kb)
+            if ok:
+                keep.append(v)
+            else:
+                notes.append("[RIFERIMENTO DA VERIFICARE] " + str(v.get("titolo", v.get("issue", "Rilievo")))[:120] + " - " + str(v.get("norma_violata", v.get("norma", "")))[:200])
+        rep[key] = keep
+    rep["note_informative"] = notes
+    return rep
+
+def gate_severita(rep):
+    warns = rep.get("avvertenze")
+    if not isinstance(warns, list):
+        warns = []
+    for key in ("violazioni_critiche", "violations"):
+        items = rep.get(key)
+        if not isinstance(items, list):
+            continue
+        keep = []
+        for v in items:
+            if isinstance(v, dict) and (v.get("conditioned_by") or v.get("condizionato")):
+                warns.append(dict(v, titolo="[DA VERIFICARE - " + str(v.get("conditioned_by") or "ambito condizionato") + "] " + str(v.get("titolo", v.get("issue", "")))))
+            else:
+                keep.append(v)
+        rep[key] = keep
+    rep["avvertenze"] = warns
+    return rep
 
 def build_pdf(title, sections):
     from fpdf import FPDF
@@ -573,6 +641,8 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
+                rep = gate_citazioni(rep)
+                rep = gate_severita(rep)
                 cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello}
                 try:
                     data = build_pdf("REPORT DI COMPLIANCE - Farma Compliance", report_sections(rep, source_desc, not_analyzed))
