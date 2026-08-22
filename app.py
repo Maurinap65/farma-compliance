@@ -130,6 +130,29 @@ def clean_for_pdf(t):
         t = t.replace(k, v)
     return t.encode("latin-1", "replace").decode("latin-1")
 
+def autoscroll(on):
+    if on:
+        html = """<script>
+        function nxScrollAll(){
+          var d = window.parent.document;
+          var t = [d.scrollingElement, d.documentElement, d.body,
+                   d.querySelector("section.main"),
+                   d.querySelector("[data-testid='stMain']"),
+                   d.querySelector("[data-testid='stAppViewContainer']")];
+          t.forEach(function(x){ if(x){ x.scrollTop = x.scrollHeight; } });
+        }
+        if(window.parent.__nxscroll){ clearInterval(window.parent.__nxscroll); }
+        window.parent.__nxscroll = setInterval(nxScrollAll, 500);
+        nxScrollAll();
+        </script>"""
+    else:
+        html = """<script>if(window.parent.__nxscroll){ clearInterval(window.parent.__nxscroll); window.parent.__nxscroll = null; }</script>"""
+    components.html(html, height=0, width=0)
+
+def scroll_to_report(target_id):
+    html = "<script>setTimeout(function(){var d=window.parent.document;var el=d.getElementById('" + target_id + "');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}},600);</script>"
+    components.html(html, height=0, width=0)
+
 def build_pdf(title, sections):
     from fpdf import FPDF
     pdf = FPDF()
@@ -235,6 +258,7 @@ def render_report(cr):
     stato = rep.get("stato_complessivo", "")
     badge = {"COMPLIANT": "green", "NEEDS_REVISION": "purple", "CRITICAL_FAIL": "red", "OUT_OF_SCOPE": "red"}.get(stato, "purple")
     st.markdown('<div id="farma-report"></div>', unsafe_allow_html=True)
+    autoscroll(False)
     st.markdown("# 📋 Report di Compliance")
     st.write(f"**Data analisi:** {datetime.now().strftime('%d/%m/%Y')} · **Tipo materiale:** {rep.get('tipo_materiale','')} · **Motore:** {cr.get('model','n.d.')}")
     st.markdown(f'**Stato complessivo:** <span class="badge {badge}">{stato}</span>', unsafe_allow_html=True)
@@ -451,6 +475,7 @@ with tab_check:
     if analyze:
         with area:
             with st.status("🔎 Analisi di conformità in corso...", expanded=True) as status:
+                autoscroll(True)
                 st.write("📥 **Fase 1/4:** Acquisizione del materiale...")
                 set_topbar("📥 Fase 1/4 — Acquisizione materiale")
                 content_text = ""
@@ -498,7 +523,7 @@ with tab_check:
                     st.error(f"Errore KB: {e}")
                     st.stop()
 
-                st.write("🧠 **Fase 3/4:** Analisi con gpt-4o (temperatura 0)...")
+                st.write("🧠 **Fase 3/4: Analisi approfondita sul corpus normativo...")
                 set_topbar("🧠 Fase 3/4 — Analisi in corso (1-4 min)")
                 image_b64 = None
                 mime = "image/png"
@@ -520,7 +545,7 @@ with tab_check:
                             try:
                                 rep, _m = claude_engine.ask_claude_stream(ANTHROPIC_API_KEY, system_blocks, "MATERIALE DA ANALIZZARE:\n" + content_send, image_b64, mime, on_delta=lambda s: live.text("⏳ Report in generazione...\n" + s[-600:]))
                             except Exception:
-                                live.text("⏳ Nuovo tentativo (modalità batch)...")
+                                live.text("⏳ Nuovo tentativo di analisi...")
                                 rep, _m = claude_engine.ask_claude(ANTHROPIC_API_KEY, system_blocks, "MATERIALE DA ANALIZZARE:\n" + content_send, image_b64, mime)
                             modello = "NEXORA Deep Engine"
                         except Exception:
@@ -660,3 +685,6 @@ if _cr3 and _cr3.get("created") and (time.time() - _cr3["created"]) < 15:
     })();
     </script>
     """, height=0, width=0)
+
+if st.session_state.get("check_result"):
+    scroll_to_report("farma-report")
