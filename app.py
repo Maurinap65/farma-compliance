@@ -112,7 +112,15 @@ REGOLE RIPRISTINO DETTAGLIO (REGOLE VINCOLANTI - LIVELLO 21/08):
 7. POSIZIONI: per ogni rilievo cita la frase esatta del materiale e la collocazione precisa (pagina/paragrafo/sezione, se desumibile).
 8. AZIONI SPECIFICHE: vietate azioni circolari tipo "verificare la conformita' alle normative vigenti": ogni azione deve dire cosa eliminare o cosa aggiungere, con quale contenuto.
 9. ONE-PAGER ADDITIVO: la sintesi esecutiva si aggiunge al dettaglio completo dei rilievi, non lo sostituisce.
-10. AMBITI CONDIZIONATI: se l'esito di un rilievo dipende da un documento assente o da una variabile non determinata, includi nel JSON il campo "conditioned_by" con la ragione: il sistema lo declassera' a "da verificare"."""
+10. AMBITI CONDIZIONATI: se l'esito di un rilievo dipende da un documento assente o da una variabile non determinata, includi nel JSON il campo "conditioned_by" con la ragione: il sistema lo declassera' a "da verificare".
+
+REGOLE DI CORREZIONE (LIVELLO AUDITOR - VINCOLANTI):
+11. RIEPILOGO COERENTE: il riepilogo esecutivo NON deve elencare come violazione alcun claim classificato UNVERIFIABLE_RCP_NOT_IN_KB; tali claim nel riepilogo vanno citati solo come "da verificare contro RCP".
+12. MAPPATURE NORMATIVE CORRETTE: (a) l'aggettivo di sicurezza assoluta ("sicuro") = art. 117 c.1 lett. b; la conformita' della fascia pediatrica e delle indicazioni terapeutiche al RCP/AIC = art. 114 c.2, NON lett. b ne' lett. i; (b) l'enfasi su gusto o palatabilita' = art. 117 c.1 lett. g e dipende dal layout grafico, NON dal RCP; (c) la lett. i si usa SOLO per il rischio di errata autodiagnosi.
+13. TIPO MATERIALE: se il materiale dice solo "senza ricetta" o "in farmacia", classificare come "SOP/OTC - da confermare", mai SOP assertivo.
+14. NOTE NON DUPLICATE: ogni fatto compare in una sola nota; la frase "verifica manuale richiesta" va usata solo dove un'informazione davvero manca; nella pubblicita' di medicinali al pubblico NON citare il direttore sanitario.
+15. PROFILO DI RISCHIO: l'omissione del profilo di rischio e' violazione dell'art. 114 c.3 (presentazione obiettiva) e va tra violazioni o avvertenze, NON tra gli elementi mancanti ex art. 116.
+16. METADATI UNIVOCI: non stampare nella nota finale nomi o date del corpus diversi da quelli forniti dal sistema nell'intestazione; se la data di aggiornamento non e' nota, ometterla."""
 
 def source_label(r):
     doc = DOC_NAMES.get(r.get('source_doc', ''), r.get('source_doc', 'sconosciuto'))
@@ -177,10 +185,18 @@ def _kb_all():
 
 def gate_citazioni(rep):
     kb = _kb_all()
-    notes = rep.get("note_informative")
-    if not isinstance(notes, list):
-        notes = []
-    for key in ("violazioni_critiche", "violations", "avvertenze", "warnings"):
+    warns = rep.get("avvertenze")
+    if not isinstance(warns, list):
+        warns = []
+    def _ok_quote(exc):
+        w = _norm_txt(exc)
+        if len(w) < 40:
+            return False
+        for i in range(0, max(1, len(w) - 60), 60):
+            if w[i:i+80] in kb:
+                return True
+        return False
+    for key in ("violazioni_critiche", "violations"):
         items = rep.get(key)
         if not isinstance(items, list):
             continue
@@ -190,17 +206,17 @@ def gate_citazioni(rep):
                 keep.append(v); continue
             exc = v.get("source_excerpt") or ""
             if not exc:
-                mtxt = str(v.get("norma_violata") or v.get("norma") or "")
-                q = re.findall(r'"([^"]{40,})"', mtxt) or re.findall(r"'([^']{40,})'", mtxt)
-                exc = q[0] if q else ""
-            w = _norm_txt(exc)
-            ok = bool(w) and (w[:120] in kb if len(w) >= 120 else w in kb)
-            if ok:
+                mtxt = str(v.get("norma_violata") or v.get("norma") or v.get("testo_norma") or "")
+                q = re.findall(r"[«\"']([^«»\"']{40,})[»\"']", mtxt)
+                exc = max(q, key=len) if q else ""
+            if _ok_quote(exc):
                 keep.append(v)
             else:
-                notes.append("[RIFERIMENTO DA VERIFICARE] " + str(v.get("titolo", v.get("issue", "Rilievo")))[:120] + " - " + str(v.get("norma_violata", v.get("norma", "")))[:200])
+                v2 = dict(v)
+                v2["titolo"] = "[RIFERIMENTO DA VERIFICARE] " + str(v.get("titolo", v.get("issue", "Rilievo")))
+                warns.append(v2)
         rep[key] = keep
-    rep["note_informative"] = notes
+    rep["avvertenze"] = warns
     return rep
 
 def gate_severita(rep):
