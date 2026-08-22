@@ -91,7 +91,16 @@ Rispondi SOLO con un JSON con questo schema esatto:
 "claims_rcp":[{"claim":"","status":""}],
 "azioni_raccomandate":[""],
 "reviewer_notes":""}
-"""
+
+
+STANDARD DELIVERABLE NEXORA (REGOLE VINCOLANTI DI OUTPUT):
+1. APERTURA CON SINTESI ESECUTIVA: max 10 righe con conteggio rilievi per gravita' (critiche/avvertenze/note) e le 3 azioni prioritarie numerate.
+2. DIVIETO DI META-LINGUAGGIO: nel report NON devono comparire termini come "temperatura", "zero allucinazioni", "modello", "prompt", "JSON" usati come autocertificazione del sistema. Il report e' un deliverable professionale.
+3. PERIMETRO DELLA VERIFICA: nella sezione revisore indica: (a) corpus normativo consultato e data di aggiornamento; (b) cio' che e' stato verificato; (c) cio' che NON e' verificabile dal sistema (RCP se assente, elementi grafici, canale di diffusione) e richiede verifica umana.
+4. CLAIM DIPENDENTI DA DOCUMENTI ASSENTI: se l'esito dipende da un documento non caricato (es. RCP), NON classificarlo come violazione critica: va SOLO nella sezione claim da verificare contro RCP con esito UNVERIFIABLE_RCP_NOT_IN_KB. Vietata la duplicazione tra sezioni.
+5. TITOLI DEI RILIEVI: descrivono cio' che e' PRESENTE nel materiale (es. "Claim pediatrico non autorizzato"), mai formule inverse o sgrammaticate.
+6. COERENZA CITAZIONI: la norma citata nel corpo e quella in fonte devono coincidere esattamente; se incerto, scrivi "riferimento da verificare" e non citare.
+7. DATA ANALISI: usa solo la data corrente fornita nel messaggio; non inventare date."""
 
 def source_label(r):
     doc = DOC_NAMES.get(r.get('source_doc', ''), r.get('source_doc', 'sconosciuto'))
@@ -229,6 +238,24 @@ def render_report(cr):
     st.markdown("# 📋 Report di Compliance")
     st.write(f"**Data analisi:** {datetime.now().strftime('%d/%m/%Y')} · **Tipo materiale:** {rep.get('tipo_materiale','')} · **Motore:** {cr.get('model','n.d.')}")
     st.markdown(f'**Stato complessivo:** <span class="badge {badge}">{stato}</span>', unsafe_allow_html=True)
+    def _lst(*keys):
+        for k in keys:
+            v = rep.get(k)
+            if isinstance(v, list):
+                return v
+        return []
+    _crit = _lst("violazioni_critiche", "violations")
+    _avv = _lst("avvertenze", "warnings")
+    _note = _lst("note_informative", "notes")
+    _az = _lst("azioni_raccomandate", "azioni")
+    _top3 = []
+    for a in _az[:3]:
+        _top3.append(a if isinstance(a, str) else (a.get("azione") or a.get("testo") or str(a)))
+    st.session_state["nx_onepager"] = ("SINTESI ESECUTIVA: " + str(len(_crit)) + " critiche - " + str(len(_avv)) + " avvertenze - " + str(len(_note)) + " note. AZIONI PRIORITARIE: " + " | ".join(_top3))
+    with st.container(border=True):
+        st.markdown(f"### 📌 SINTESI ESECUTIVA — {len(_crit)} critiche · {len(_avv)} avvertenze · {len(_note)} note")
+        for i, s in enumerate(_top3, 1):
+            st.write(f"**{i}.** {s}")
     st.markdown("## Riepilogo Esecutivo")
     st.write(rep.get("riepilogo_esecutivo", ""))
     st.write("**Analizzato:** " + ("; ".join(cr["source_desc"]) or "-"))
