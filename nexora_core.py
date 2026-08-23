@@ -567,7 +567,7 @@ def anchor_pos(rep, text):
                     if mk in li:
                         idx = li.find(mk)
                         s0 = l.rfind(". ", 0, idx)
-                        e0 = l.find(". ", idx)
+                        e0 = l.find(". ", idx + len(mk))
                         seg = l[(s0 + 2 if s0 != -1 else 0):(e0 if e0 != -1 else len(l))].strip()
                         if len(seg) < 8:
                             seg = l.strip()[:40]
@@ -787,7 +787,9 @@ def render_md(rep, meta):
     L.append(str(nota) if nota else "Validazione umana richiesta prima dell'uso.")
     L.append("DISCLAIMER: Report generato automaticamente dal sistema di Compliance QA. Validazione umana richiesta prima dell'uso.")
     L.append("TESTI NORMATIVI: consultabili su Normattiva (www.normattiva.it) - ricerca: 'Decreto Legislativo 219/2006' - testo vigente al " + DATA + ". NEXORA Deep Engine svolge l'analisi; Normattiva e' la fonte pubblica di verifica del testo di legge. NEXORA non e' affiliata a Normattiva.")
-    return stamp_keys("\n\n".join(L))
+    s = "\n\n".join(L)
+    s = s.replace("...", "§§§").replace("..", ".").replace("§§§", "...")
+    return stamp_keys(s)
 
 def golden_check(rep, ad):
     c, w, m, r = counts(rep)
