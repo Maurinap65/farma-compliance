@@ -317,7 +317,7 @@ def promote_profilo(rep):
     keep = []
     for v in items:
         if "profilo di rischio" in str(v).lower():
-            rep.setdefault("violazioni_critiche", []).append({"titolo": "Omissione totale del profilo di rischio", "problema": "Il materiale presenta solo benefici senza informazioni sul profilo di rischio, impedendo una presentazione obiettiva e bilanciata.", "posizione": "Intero materiale", "norma_key": ["art114_c3_a", "art114_c3_b"]})
+            rep.setdefault("violazioni_critiche", []).append({"titolo": "Omissione totale del profilo di rischio", "problema": "Il materiale presenta solo benefici senza informazioni sul profilo di rischio, impedendo una presentazione obiettiva e bilanciata.", "posizione": "Intero materiale", "norma_key": ["art114_c3_a", "art114_c3_b"], "azione": "Integrare il materiale con il profilo di rischio del medicinale in modo bilanciato rispetto ai benefici, o rimandare al foglio illustrativo (obbligatorio ex art. 116 c.1 lett. b n.3).", "azione_richiesta": "Integrare il materiale con il profilo di rischio del medicinale in modo bilanciato rispetto ai benefici, o rimandare al foglio illustrativo (obbligatorio ex art. 116 c.1 lett. b n.3)."})
         else:
             keep.append(v)
     rep["elementi_mancanti"] = keep
@@ -467,6 +467,27 @@ def anchor_pos(rep, text):
                 p = find_pos(str(v.get("titolo", "")) + " " + str(v.get("problema", "")))
                 if p:
                     v["posizione"] = p
+    return rep
+
+def ensure_azioni(rep):
+    for key in ("violazioni_critiche", "avvertenze"):
+        for v in (rep.get(key) or []):
+            if not isinstance(v, dict):
+                continue
+            a = str(v.get("azione_richiesta", "") or v.get("azione", "")).strip()
+            if a:
+                continue
+            ks = [str(k) for k in (v.get("norma_key") or [])]
+            if any(k.startswith("art117") for k in ks):
+                a = "Eliminare integralmente l'elemento contestato: i divieti assoluti ex art. 117 c.1 non consentono riformulazioni."
+            elif any(k.startswith("art116") or k.startswith("art118") for k in ks):
+                a = "Integrare l'elemento obbligatorio mancante conformemente alla norma citata e al RCP."
+            elif any(k.startswith("art114") for k in ks):
+                a = "Ribilanciare la presentazione integrando il profilo di rischio o correggere il claim secondo quanto descritto nel problema."
+            else:
+                a = "Rivedere il punto come descritto nel problema. Validazione umana richiesta."
+            v["azione"] = a
+            v["azione_richiesta"] = a
     return rep
 
 def validate_rep(rep):
@@ -991,7 +1012,7 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, (globals().get("content") or globals().get("ad_text") or globals().get("testo") or ""))
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, (globals().get("content") or globals().get("ad_text") or globals().get("testo") or ""))
                 _probs = validate_rep(rep)
                 if _probs:
                     st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
