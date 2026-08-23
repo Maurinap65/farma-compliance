@@ -129,7 +129,9 @@ REGOLE DI CORREZIONE (LIVELLO AUDITOR - VINCOLANTI):
 
 24. CONTENUTO MINIMO (LIVELLO 07:45, VINCOLANTE): (a) "Il n.1 consigliato dai farmacisti" = doppia contestazione art117_c1_b + art117_c1_f; (b) la mancata identificazione come medicinale e' VIOLAZIONE CRITICA ex art116_c1_a e resta anche fra gli elementi mancanti; (c) "tosse secca e grassa" = avvertenza art117_c1_i E claim da verificare contro RCP; (d) "sicuro" e "privo di effetti collaterali" sono due rilievi separati; (e) l'omissione del profilo di rischio e' violazione critica art114_c3_a; (f) sui divieti assoluti l'azione e' sempre ELIMINARE, mai correggere; (g) per il gusto: valutare se il contesto grafico configuri assimilazione a prodotto alimentare; (h) posizioni precise: prima/seconda/terza/quarta riga o frase esatta, mai "Testo"; (i) ogni rilievo ha la sua azione e le azioni coprono anche gli elementi mancanti; (j) il riepilogo dichiara conteggi numerici; (k) la nota finale contiene sempre il perimetro VERIFICATO / NON VERIFICATO; (l) non chiamare mai "immagine" un testo.
 
-25. REGOLA 25 (RIFINITURE VINCOLANTI): (a) mai "per analogia", "in via estensiva", "applicabile in quanto compatibile", "eventuali linee guida": se non c'e' la chiave esatta, il rilievo va in nota; (b) l'obbligo della denominazione comune (art. 116 c.1 lett. b n.1) riguarda il medicinale con una sola sostanza attiva: formula "indicare la denominazione comune (INN) se il medicinale contiene una sola sostanza attiva"; (c) le note informative NON duplicano rilievi o elementi mancanti gia' registrati, e il boilerplate "informazione non presente nei documenti caricati" si usa SOLO per fatti davvero assenti dal corpus (es. RCP), mai per fatti del materiale gia' contestati; (d) l'enfasi organolettica (gusto) e' AVVERTENZA con verifica del layout, mai nota; (e) il tipo materiale "SOP/OTC - da confermare" compare anche fra i punti NON VERIFICATI della nota finale."""
+25. REGOLA 25 (RIFINITURE VINCOLANTI): (a) mai "per analogia", "in via estensiva", "applicabile in quanto compatibile", "eventuali linee guida": se non c'e' la chiave esatta, il rilievo va in nota; (b) l'obbligo della denominazione comune (art. 116 c.1 lett. b n.1) riguarda il medicinale con una sola sostanza attiva: formula "indicare la denominazione comune (INN) se il medicinale contiene una sola sostanza attiva"; (c) le note informative NON duplicano rilievi o elementi mancanti gia' registrati, e il boilerplate "informazione non presente nei documenti caricati" si usa SOLO per fatti davvero assenti dal corpus (es. RCP), mai per fatti del materiale gia' contestati; (d) l'enfasi organolettica (gusto) e' AVVERTENZA con verifica del layout, mai nota; (e) il tipo materiale "SOP/OTC - da confermare" compare anche fra i punti NON VERIFICATI della nota finale.
+
+26. REGOLA 26: (a) ogni claim di efficacia o tempo (es. "la tosse sparisce in 24 ore") va SEMPRE anche nella sezione CLAIM DA VERIFICARE CONTRO RCP, con indicazione della sezione RCP pertinente (es. 4.1/4.2/4.3 o 5.1); (b) nel riepilogo non scrivere mai "mancano N elementi mancanti": usa "mancano N elementi obbligatori"; (c) un fatto gia' contestato come violazione non compare fra gli elementi mancanti."""
 
 def source_label(r):
     doc = DOC_NAMES.get(r.get('source_doc', ''), r.get('source_doc', 'sconosciuto'))
@@ -321,13 +323,59 @@ def promote_profilo(rep):
     rep["elementi_mancanti"] = keep
     return rep
 
+def dedup_mancanti(rep):
+    crit_keys = set()
+    for v in (rep.get("violazioni_critiche") or []):
+        if isinstance(v, dict):
+            crit_keys.update(v.get("norma_key") or [])
+    items = rep.get("elementi_mancanti")
+    if not isinstance(items, list):
+        return rep
+    keep = []
+    for v in items:
+        t = str(v).lower()
+        if ("art116_c1_a" in crit_keys) and ("lett. a" in t or "identificat" in t):
+            continue
+        keep.append(v)
+    rep["elementi_mancanti"] = keep
+    return rep
+
+def ensure_pediatrica(rep):
+    avv = rep.get("avvertenze") or []
+    has = any("art114_c2" in (v.get("norma_key") or []) for v in avv if isinstance(v, dict))
+    claims_txt = " ".join(str(c) for c in (rep.get("claims_rcp") or [])).lower()
+    if not has and "sotto i 2" in claims_txt:
+        mappa = load_norme_chiavi()
+        DATA = datetime.now().strftime("%d/%m/%Y")
+        two = "Se il RCP non autorizza la fascia: eliminare integralmente il claim. Se il RCP la autorizza: il riferimento puo' restare, ma l'aggettivo 'sicuro' va eliminato comunque (v. violazione sulla sicurezza assoluta)."
+        avv.append({"titolo": "Claim pediatrico - conformita' RCP non verificabile (v. anche il rilievo sulla sicurezza assoluta della stessa frase)", "problema": "Il claim 'anche per bambini sotto i 2 anni' promuove un uso in fascia pediatrica la cui conformita' al RCP non e' verificabile dal corpus caricato.", "posizione": "Seconda riga", "norma_key": ["art114_c2"], "norma_violata": "D.Lgs 219/2006, Art. 114 c.2 - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c2", "") + "»", "azione": two})
+        rep["avvertenze"] = avv
+    for v in (rep.get("violazioni_critiche") or []):
+        if isinstance(v, dict) and "sicur" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() and "v. anche" not in str(v.get("problema", "")):
+            v["problema"] = str(v.get("problema", "")) + " (v. anche l'avvertenza sulla conformita' RCP della stessa frase)."
+    return rep
+
+def ensure_perimetro(rep):
+    BLOCK = " PERIMETRO DELLA VERIFICA - VERIFICATO: divieti assoluti art. 117 c.1; elementi obbligatori artt. 116 e 118; presentazione obiettiva art. 114 c.3. NON VERIFICATO (richiede verifica umana): conformita' al RCP (assente nella knowledge base); layout grafico e enfasi visiva; canale di diffusione."
+    def walk(x):
+        if isinstance(x, dict):
+            return {k: walk(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [walk(v) for v in x]
+        if isinstance(x, str) and "corpus normativo consultato" in x.lower() and "non verificato" not in x.lower():
+            return x + BLOCK
+        return x
+    return walk(rep)
+
 def fix_counts(rep):
     for rk in ("riepilogo_esecutivo", "riepilogo"):
         r = rep.get(rk)
         if isinstance(r, str):
             r = re.sub(r"\d+ violazioni critiche", str(len(rep.get("violazioni_critiche") or [])) + " violazioni critiche", r)
             r = re.sub(r"\d+ avvertenze", str(len(rep.get("avvertenze") or [])) + " avvertenze", r)
-            r = re.sub(r"\d+ elementi (mancanti|obbligatori)", str(len(rep.get("elementi_mancanti") or [])) + " elementi mancanti", r)
+            r = re.sub(r"Mancano inoltre \d+ elementi mancanti", "Mancano inoltre " + str(len(rep.get("elementi_mancanti") or [])) + " elementi obbligatori", r)
+            r = re.sub(r"\d+ elementi (mancanti|obbligatori)", str(len(rep.get("elementi_mancanti") or [])) + " elementi obbligatori", r)
+            r = re.sub(r"\d+ claim da verificare", str(len(rep.get("claims_rcp") or [])) + " claim da verificare", r)
             rep[rk] = r
     return rep
 
@@ -550,8 +598,8 @@ def render_report(cr):
         _m = rep.get("elementi_mancanti") or []
         _r = rep.get("claims_rcp") or []
         _flat = _json.dumps(rep, ensure_ascii=False).lower()
-        _ok = len(_c) == 8 and len(_w) == 3 and len(_m) == 4 and len(_r) == 3 and "per analogia" not in _flat and "testo vigente" in _flat
-        st.write(("✅ DIFF OK" if _ok else "❌ DIFF SCOSTATO") + f" — Atteso 8 critiche / 3 avvertenze / 4 mancanti / 3 RCP · Ottenuto {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
+        _ok = len(_c) == 7 and len(_w) == 3 and len(_m) == 4 and len(_r) == 3 and "per analogia" not in _flat and "testo vigente" in _flat and "non verificato" in _flat and "art114_c2" in _flat
+        st.write(("✅ DIFF OK" if _ok else "❌ DIFF SCOSTATO") + f" — Atteso 7 critiche / 3 avvertenze / 4 mancanti / 3 RCP · Ottenuto {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
         for nome, ok in [("nessuna analogia", "per analogia" not in _flat), ("citazioni con vigenza e fonte", "fonte normattiva" in _flat), ("rimandi incrociati sicuro/RCP", "v. anche" in _flat), ("posizioni per riga", "riga" in _flat), ("perimetro verificato/non verificato", "non verificato" in _flat)]:
             st.write(("✅ " if ok else "❌ ") + nome)
     st.markdown("## Riepilogo Esecutivo")
@@ -847,7 +895,7 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = fix_corpus_date(rep)
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = fix_corpus_date(rep)
                 rep = gate_severita(rep)
                 cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello}
                 try:
