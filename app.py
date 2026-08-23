@@ -199,6 +199,13 @@ def load_norme_chiavi():
     return m
 
 def normalize_rep(rep):
+    for sec in ("violazioni_critiche", "violations", "avvertenze", "warnings", "elementi_mancanti"):
+        for v in (rep.get(sec) or []):
+            if isinstance(v, dict):
+                if not str(v.get("problema", "")).strip():
+                    v["problema"] = str(v.get("testo") or v.get("descrizione") or v.get("issue") or v.get("problema_descrizione") or v.get("titolo") or "")
+                if not str(v.get("titolo", "")).strip():
+                    v["titolo"] = str(v.get("title") or v.get("elemento") or "Rilievo")
     viol = rep.get("violazioni_critiche") or []
     avv = rep.get("avvertenze") or []
     for v in rep.get("violations") or []:
@@ -442,6 +449,9 @@ def stabilize_classi(rep):
         ks = set(v.get("norma_key") or []) if isinstance(v, dict) else set()
         if ("art116_c1_a" in ks) or ("lett. a" in t and "116" in t and "identific" in t):
             if isinstance(v, dict):
+                v["problema"] = str(v.get("problema") or v.get("testo") or v.get("descrizione") or v.get("titolo") or "")
+                v["azione"] = v.get("azione") or v.get("azione_richiesta") or "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...')."
+                v["azione_richiesta"] = v["azione"]
                 keep_c.append(v)
             else:
                 keep_c.append({"titolo": "Mancata identificazione esplicita come medicinale", "problema": str(v), "posizione": "Intero materiale", "norma_key": ["art116_c1_a"], "azione": "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...').", "azione_richiesta": "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...')."})
