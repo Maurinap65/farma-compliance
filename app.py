@@ -324,6 +324,7 @@ def promote_profilo(rep):
     return rep
 
 def dedup_mancanti(rep):
+    crit_txt = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)).lower()
     crit_keys = set()
     for v in (rep.get("violazioni_critiche") or []):
         if isinstance(v, dict):
@@ -334,7 +335,9 @@ def dedup_mancanti(rep):
     keep = []
     for v in items:
         t = str(v).lower()
-        if ("art116_c1_a" in crit_keys) and ("lett. a" in t or "identificat" in t):
+        if ("art116_c1_a" in crit_keys) and ("lett. a" in t or "identific" in t):
+            continue
+        if "profilo di rischio" in t and "profilo di rischio" in crit_txt:
             continue
         keep.append(v)
     rep["elementi_mancanti"] = keep
@@ -378,6 +381,24 @@ def fix_counts(rep):
             r = re.sub(r"\d+ elementi (mancanti|obbligatori)", str(len(rep.get("elementi_mancanti") or [])) + " elementi obbligatori", r)
             r = re.sub(r"\d+ claim da verificare", str(len(rep.get("claims_rcp") or [])) + " claim da verificare", r)
             rep[rk] = r
+    return rep
+
+def dedup_critici(rep):
+    seen = set()
+    keep = []
+    for v in (rep.get("violazioni_critiche") or []):
+        t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower() if isinstance(v, dict) else str(v).lower()
+        sig = None
+        if "identific" in t and "medicinale" in t:
+            sig = "identificazione"
+        if "profilo di rischio" in t:
+            sig = "profilo"
+        if sig and sig in seen:
+            continue
+        if sig:
+            seen.add(sig)
+        keep.append(v)
+    rep["violazioni_critiche"] = keep
     return rep
 
 def fix_notes(rep):
@@ -539,7 +560,7 @@ def ensure_profilo(rep, text):
     rischi = any(w in tl for w in ("effetti indesiderati", "controindicazioni", "avvertenze", "profilo di rischio"))
     if not (benefici and not rischi):
         return rep
-    if any("art114_c3_a" in (v.get("norma_key") or []) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)):
+    if any("profilo di rischio" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)):
         return rep
     mappa = load_norme_chiavi(); DATA = datetime.now().strftime("%d/%m/%Y")
     rep.setdefault("violazioni_critiche", []).append({"titolo": "Omissione totale del profilo di rischio", "problema": "Il materiale presenta solo benefici senza informazioni sul profilo di rischio, impedendo una presentazione obiettiva e bilanciata.", "posizione": "Intero materiale", "norma_key": ["art114_c3_a", "art114_c3_b"], "norma_violata": "Art. 114 c.3 lett. a - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c3_a", "") + "»", "azione": "Integrare il materiale con il profilo di rischio del medicinale in modo bilanciato rispetto ai benefici, o rimandare al foglio illustrativo (obbligatorio ex art. 116 c.1 lett. b n.3)."})
@@ -1101,7 +1122,7 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = dedup_critici(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
                 _probs = validate_rep(rep)
                 if _probs:
                     st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
