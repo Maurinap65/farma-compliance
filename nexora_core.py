@@ -423,7 +423,7 @@ def fix_notes(rep):
     for nte in notes:
         s = str(nte.get("titolo", "") + " " + nte.get("testo", "")).strip() if isinstance(nte, dict) else str(nte)
         sl = s.lower()
-        if "oltre a quelli già contestati" in sl or "non presenta titoli o qualifiche particolari" in sl or "direttore sanitario" in sl or "claim da verificare contro rcp" in sl or "non sono presenti titoli, qualifiche" in sl or "denominazione comune" in sl or ("inn" in sl and "sostanza" in sl):
+        if "oltre a quelli già contestati" in sl or "non presenta titoli o qualifiche particolari" in sl or "direttore sanitario" in sl or "claim da verificare contro rcp" in sl or "non sono presenti titoli, qualifiche" in sl or "denominazione comune" in sl or ("inn" in sl and "sostanza" in sl) or ("il materiale presenta il titolo" in sl and len(sl) < 150):
             continue
         dup = any(f in sl for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian")) and any(f in crit_txt for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian"))
         if dup:
@@ -493,35 +493,31 @@ def ensure_azioni(rep):
             v["azione_richiesta"] = a
     return rep
 
-def force_canonico(rep, text):
-    mappa, DATA = load_norme(), _data()
-    def _stampa(ks):
-        return " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks if k in mappa)
-    tl = (text or "").lower()
-    crit = rep.get("violazioni_critiche") or []
-    avv = rep.get("avvertenze") or []
-    if "sicuro" in tl and "bambini" in tl:
-        for v in crit:
-            if not isinstance(v, dict):
-                continue
-            t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower()
-            if "sicur" in t and "bambini" in t and "effetti collaterali" not in t:
-                v["norma_key"] = ["art114_c3_a", "art117_c1_b"]
-                v["norma_violata"] = _stampa(["art114_c3_a", "art117_c1_b"])
-                v["titolo"] = "Aggettivo di sicurezza assoluta su fascia pediatrica"
-                v["problema"] = "L'aggettivo 'sicuro' in 'sicuro anche per bambini sotto i 2 anni' costituisce affermazione categorica di sicurezza assoluta, vietata indipendentemente dal RCP (profilo incondizionato). Per la fascia di eta' v. l'avvertenza dedicata."
-                break
-    if "sotto i 2" in tl and not any("art114_c2" in (v.get("norma_key") or []) for v in avv if isinstance(v, dict)):
-        avv.append({"titolo": "Claim pediatrico - fascia sotto i 2 anni - conformita' RCP non verificabile (v. la violazione critica sull'aggettivo di sicurezza assoluta)", "problema": "L'indicazione 'bambini sotto i 2 anni' configura claim terapeutico verificabile solo contro il RCP (fascia di eta' autorizzata), assente nella knowledge base.", "posizione": "Riga 2", "norma_key": ["art114_c2"], "norma_violata": _stampa(["art114_c2"]), "azione": "Se il RCP non autorizza la fascia: eliminare integralmente il claim. Se il RCP la autorizza: il riferimento puo' restare, ma l'aggettivo 'sicuro' va eliminato comunque (v. violazione sulla sicurezza assoluta)."})
-        rep["avvertenze"] = avv
-    for v in crit:
+def fix_punti(rep):
+    def walk(x):
+        if isinstance(x, dict):
+            return {k: walk(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [walk(v) for v in x]
+        if isinstance(x, str):
+            x = x.replace("...", "\x00")
+            x = re.sub(r"\.(\s*\.)+", ".", x)
+            x = x.replace("\x00", "...")
+            return x
+        return x
+    return walk(rep)
+
+def fix_ident(rep):
+    for v in (rep.get("violazioni_critiche") or []):
         if not isinstance(v, dict):
             continue
-        t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower()
-        if "profilo di rischio" in t or "profilo rischio" in t:
-            v["norma_key"] = ["art114_c3_a", "art114_c3_b"]
-            v["norma_violata"] = _stampa(["art114_c3_a", "art114_c3_b"])
-            break
+        if "art116_c1_a" not in (v.get("norma_key") or []):
+            continue
+        p = str(v.get("problema", "")).lower()
+        if ": art." in p or "identificazione chiara" in p or "identificazione del prodotto" in p:
+            v["problema"] = "Il prodotto non e' chiaramente identificato come medicinale. La dicitura 'Disponibile in farmacia senza ricetta' non soddisfa l'obbligo di chiara identificazione del prodotto come medicinale."
+        v["azione"] = "Inserire in posizione preminente la formula esplicita 'Medicinale senza obbligo di prescrizione' o equivalente che identifichi chiaramente il prodotto come medicinale."
+        v["azione_richiesta"] = v["azione"]
     return rep
 
 def enrich_azioni(rep):
@@ -688,12 +684,13 @@ def pipeline(rep, text):
     rep = ensure_perimetro(rep)
     rep = clean_azioni(rep)
     rep = ensure_azioni(rep)
-    rep = force_canonico(rep, text)
     rep = enrich_azioni(rep)
+    rep = fix_ident(rep)
     rep = clean_formule(rep)
     rep = ensure_norma(rep)
     rep = fix_corpus_date(rep)
     rep = anchor_pos(rep, text)
+    rep = fix_punti(rep)
     return rep, validate_rep(rep)
 
 def counts(rep):
