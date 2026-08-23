@@ -1,853 +1,752 @@
+"""
+NEXORA Farma Compliance - core
+Riscrittura: tabella di regole al posto della pipeline di patch sequenziali.
+
+Principi:
+  1. Il testo delle norme non passa MAI dal modello: si risolve per chiave dal corpus.
+  2. La severita' non e' decisa dal modello: si deriva dalle chiavi (tabella unica).
+  3. La posizione si ancora al testo letterale contestato (quote), non a marker cablati.
+  4. Nessuna logica specifica per un materiale: il motore non conosce TussanPlus.
+  5. I gate BLOCCANO. validate() solleva ReportNonValido se strict=True.
+"""
+
 import re
+import json
+import hashlib
 from datetime import datetime
 
-BUILD = "NX5-20260823a"
+BUILD = "NX6-core"
 
-EMBED_NORME = {"art113_c1_a":"per pubblicita' di medicinali: qualsiasi forma di informazione, di ricerca di mercato e di incentivazione alla prescrizione, alla fornitura, alla vendita o al consumo di medicinali;", "art114_c2":"La pubblicita' di un medicinale e' conforme al riassunto delle caratteristiche del prodotto.", "art114_c3_a":"La pubblicita' di un medicinale deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprieta'.", "art114_c3_b":"La pubblicita' di un medicinale non puo' essere ingannevole.", "art116_c1_a":"La pubblicita' di un medicinale presso il pubblico e' realizzata in modo che la natura pubblicitaria del messaggio e' evidente e il prodotto e' chiaramente identificato come medicinale.", "art116_c1_b1":"la denominazione del medicinale e la denominazione comune della sostanza attiva;", "art116_c1_b2":"le informazioni indispensabili per un uso corretto del medicinale;", "art116_c1_b3":"un invito esplicito e chiaro a leggere attentamente le avvertenze figuranti, a seconda dei casi, nel foglio illustrativo o sull'imballaggio esterno.", "art117_c1_a":"induca a ritenere che la visita medica o l'intervento chirurgico siano superflui, in particolare offrendo una diagnosi o suggerendo un trattamento per corrispondenza;", "art117_c1_b":"induca a ritenere che gli effetti derivanti dall'assunzione del medicinale siano garantiti, non siano accompagnati da reazioni avverse o siano superiori o pari a quelli di un altro trattamento o medicinale;", "art117_c1_f":"comprenda una raccomandazione di scienziati, di operatori sanitari o di persone largamente note al pubblico;", "art117_c1_g":"assimili il medicinale ad un prodotto alimentare, ad un prodotto cosmetico o ad un altro prodotto di consumo;", "art117_c1_i":"possa indurre ad una errata autodiagnosi;", "art117_c1_l":"faccia riferimento, in termini impropri, allarmistici o ingannevoli, ad attestati di guarigione;", "art118_c1":"Nessuna pubblicita' di medicinali presso il pubblico puo' essere effettuata senza autorizzazione del Ministero della salute.", "art118_c8":"Decorsi quarantacinque giorni dalla presentazione della domanda senza osservazioni del Ministero della salute, la pubblicita' si intende autorizzata."}
-LABEL = {"art113_c1_a":"Art. 113 c.1 lett. a","art114_c2":"Art. 114 c.2","art114_c3_a":"Art. 114 c.3 lett. a","art114_c3_b":"Art. 114 c.3 lett. b","art116_c1_a":"Art. 116 c.1 lett. a","art116_c1_b1":"Art. 116 c.1 lett. b n.1","art116_c1_b2":"Art. 116 c.1 lett. b n.2","art116_c1_b3":"Art. 116 c.1 lett. b n.3","art117_c1_a":"Art. 117 c.1 lett. a","art117_c1_b":"Art. 117 c.1 lett. b","art117_c1_f":"Art. 117 c.1 lett. f","art117_c1_g":"Art. 117 c.1 lett. g","art117_c1_i":"Art. 117 c.1 lett. i","art117_c1_l":"Art. 117 c.1 lett. l","art118_c1":"Art. 118 c.1","art118_c8":"Art. 118 c.8"}
-PROMPT_MARKERS = ["[{'type'", "'type': 'text'", "sei un senior", "regole fondamentali", "system prompt", "knowledge_chunks", "skill_prompt"]
-DEFAULT_PER = "PERIMETRO DELLA VERIFICA - VERIFICATO: divieti assoluti art. 117 c.1; elementi obbligatori artt. 116 e 118; presentazione obiettiva art. 114 c.3. NON VERIFICATO (richiede verifica umana): conformita' al RCP (assente nella knowledge base); layout grafico e enfasi visiva; canale di diffusione."
-ANALOGIA_TERMS = ["per analogia", "in via estensiva", "applicabile in quanto compatibile", "eventuali linee guida"]
+# ----------------------------------------------------------------------------
+# CORPUS
+# ----------------------------------------------------------------------------
 
-def load_norme():
-    m = dict(EMBED_NORME)
-    try:
-        t = open("kb/pharma_norme_chiavi.txt", encoding="utf-8", errors="replace").read()
-        for k, v in re.findall(r"\[KEY ([a-zA-Z0-9_]+)\]\n([^[]+)", t):
-            m[k] = v.strip()
-    except Exception:
-        pass
-    return m
+EMBED_NORME = {
+    "art113_c1_a": "per pubblicita' di medicinali: qualsiasi forma di informazione, di ricerca di mercato e di incentivazione alla prescrizione, alla fornitura, alla vendita o al consumo di medicinali;",
+    "art114_c2": "La pubblicita' di un medicinale e' conforme al riassunto delle caratteristiche del prodotto.",
+    "art114_c3_a": "La pubblicita' di un medicinale deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprieta'.",
+    "art114_c3_b": "La pubblicita' di un medicinale non puo' essere ingannevole.",
+    "art116_c1_a": "La pubblicita' di un medicinale presso il pubblico e' realizzata in modo che la natura pubblicitaria del messaggio e' evidente e il prodotto e' chiaramente identificato come medicinale.",
+    "art116_c1_b1": "la denominazione del medicinale e la denominazione comune della sostanza attiva;",
+    "art116_c1_b2": "le informazioni indispensabili per un uso corretto del medicinale;",
+    "art116_c1_b3": "un invito esplicito e chiaro a leggere attentamente le avvertenze figuranti, a seconda dei casi, nel foglio illustrativo o sull'imballaggio esterno.",
+    "art117_c1_a": "induca a ritenere che la visita medica o l'intervento chirurgico siano superflui, in particolare offrendo una diagnosi o suggerendo un trattamento per corrispondenza;",
+    "art117_c1_b": "induca a ritenere che gli effetti derivanti dall'assunzione del medicinale siano garantiti, non siano accompagnati da reazioni avverse o siano superiori o pari a quelli di un altro trattamento o medicinale;",
+    "art117_c1_f": "comprenda una raccomandazione di scienziati, di operatori sanitari o di persone largamente note al pubblico;",
+    "art117_c1_g": "assimili il medicinale ad un prodotto alimentare, ad un prodotto cosmetico o ad un altro prodotto di consumo;",
+    "art117_c1_i": "possa indurre ad una errata autodiagnosi;",
+    "art117_c1_l": "faccia riferimento, in termini impropri, allarmistici o ingannevoli, ad attestati di guarigione;",
+    "art118_c1": "Nessuna pubblicita' di medicinali presso il pubblico puo' essere effettuata senza autorizzazione del Ministero della salute.",
+    "art118_c8": "Decorsi quarantacinque giorni dalla presentazione della domanda senza osservazioni del Ministero della salute, la pubblicita' si intende autorizzata.",
+}
 
-def _data():
-    return datetime.now().strftime("%d/%m/%Y")
+LABEL = {
+    "art113_c1_a": "Art. 113 c.1 lett. a",
+    "art114_c2": "Art. 114 c.2",
+    "art114_c3_a": "Art. 114 c.3 lett. a",
+    "art114_c3_b": "Art. 114 c.3 lett. b",
+    "art116_c1_a": "Art. 116 c.1 lett. a",
+    "art116_c1_b1": "Art. 116 c.1 lett. b n.1",
+    "art116_c1_b2": "Art. 116 c.1 lett. b n.2",
+    "art116_c1_b3": "Art. 116 c.1 lett. b n.3",
+    "art117_c1_a": "Art. 117 c.1 lett. a",
+    "art117_c1_b": "Art. 117 c.1 lett. b",
+    "art117_c1_f": "Art. 117 c.1 lett. f",
+    "art117_c1_g": "Art. 117 c.1 lett. g",
+    "art117_c1_i": "Art. 117 c.1 lett. i",
+    "art117_c1_l": "Art. 117 c.1 lett. l",
+    "art118_c1": "Art. 118 c.1",
+    "art118_c8": "Art. 118 c.8",
+}
 
-def _oneline(s, d=""):
-    return str(s or d).replace("\r", " ").split("\n")[0].strip() or d
+FONTE = "D.Lgs 219/2006"
 
-def _norm_txt(t):
-    return re.sub(r"[^a-z0-9à-öø-ÿ]+", "", (t or "").lower())
 
-def normalize_rep(rep):
-    for sec in ("violazioni_critiche", "violations", "avvertenze", "warnings", "elementi_mancanti"):
-        for v in (rep.get(sec) or []):
-            if isinstance(v, dict):
-                if not str(v.get("problema", "")).strip():
-                    v["problema"] = str(v.get("testo") or v.get("descrizione") or v.get("issue") or v.get("titolo") or "")
-                if not str(v.get("titolo", "")).strip():
-                    v["titolo"] = str(v.get("title") or v.get("elemento") or "Rilievo")
-    mm = []
-    for v in rep.get("elementi_mancanti") or []:
-        if isinstance(v, dict):
-            mm.append(str(v.get("elemento") or v.get("titolo") or "") + ": " + str(v.get("riferimento") or v.get("norma") or ""))
-        else:
-            mm.append(str(v))
-    rep["elementi_mancanti"] = mm
-    viol, avv = rep.get("violazioni_critiche") or [], rep.get("avvertenze") or []
-    for v in rep.get("violations") or []:
-        sev = str(v.get("severity", "")).upper() if isinstance(v, dict) else ""
-        (viol if "CRITIC" in sev else avv).append(v)
-    keep = []
-    for v in avv:
-        sev = str(v.get("severity", "")).upper() if isinstance(v, dict) else ""
-        (viol if "CRITIC" in sev else keep).append(v)
-    rep["violazioni_critiche"], rep["avvertenze"] = viol, keep
-    return rep
+class Corpus:
+    """Corpus normativo. La data di vigenza viene dal corpus, MAI dall'orologio."""
 
-def promote_profilo(rep):
-    items = rep.get("elementi_mancanti")
-    if not isinstance(items, list):
-        return rep
-    keep = []
-    for v in items:
-        if "profilo di rischio" in str(v).lower():
-            rep.setdefault("violazioni_critiche", []).append({"titolo": "Omissione totale del profilo di rischio", "problema": "Il materiale presenta solo benefici senza informazioni sul profilo di rischio, impedendo una presentazione obiettiva e bilanciata.", "posizione": "Intero materiale", "norma_key": ["art114_c3_a", "art114_c3_b"], "azione": "Integrare il materiale con il profilo di rischio del medicinale in modo bilanciato rispetto ai benefici, o rimandare al foglio illustrativo (obbligatorio ex art. 116 c.1 lett. b n.3).", "azione_richiesta": "Integrare il materiale con il profilo di rischio del medicinale in modo bilanciato rispetto ai benefici, o rimandare al foglio illustrativo (obbligatorio ex art. 116 c.1 lett. b n.3)."})
-        else:
-            keep.append(v)
-    rep["elementi_mancanti"] = keep
-    return rep
+    def __init__(self, norme=None, data_vigenza=None, origine="embedded", warnings=None):
+        self.norme = dict(norme or EMBED_NORME)
+        self.data_vigenza = data_vigenza          # None = non dichiarata
+        self.origine = origine
+        self.warnings = list(warnings or [])
 
-def stabilize_classi(rep):
-    crit, manc = rep.get("violazioni_critiche") or [], rep.get("elementi_mancanti") or []
-    keep_c = []
-    for v in crit:
-        if not isinstance(v, dict):
-            keep_c.append(v); continue
-        ks = set(v.get("norma_key") or [])
-        t = str(v).lower()
-        if ks and ks <= {"art116_c1_b1", "art116_c1_b2", "art116_c1_b3", "art118_c1", "art118_c8"}:
-            manc.append(v); continue
-        if not ks and re.search(r"116 c\.1 lett\. b n\.|118 c\.1", t) and "lett. a" not in t:
-            manc.append(v); continue
-        keep_c.append(v)
-    keep_m = []
-    for v in manc:
-        t = str(v).lower()
-        ks = set(v.get("norma_key") or []) if isinstance(v, dict) else set()
-        if ("art116_c1_a" in ks) or ("lett. a" in t and "116" in t and "identific" in t):
-            if isinstance(v, dict):
-                v["problema"] = str(v.get("problema") or v.get("testo") or v.get("descrizione") or v.get("titolo") or "")
-                v["azione"] = v.get("azione") or v.get("azione_richiesta") or "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...')."
-                v["azione_richiesta"] = v["azione"]
-                v["norma_key"] = v.get("norma_key") or ["art116_c1_a"]
-                keep_c.append(v)
-            else:
-                keep_c.append({"titolo": "Mancata identificazione esplicita come medicinale", "problema": str(v), "posizione": "Intero materiale", "norma_key": ["art116_c1_a"], "azione": "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...').", "azione_richiesta": "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...')."})
-            continue
-        keep_m.append(v)
-    rep["violazioni_critiche"], rep["elementi_mancanti"] = keep_c, keep_m
-    return rep
+    @classmethod
+    def load(cls, path="kb/pharma_norme_chiavi.txt"):
+        """
+        Formato atteso:
+            # DATA_VIGENZA: 23/08/2026
+            [KEY art117_c1_b]
+            <testo letterale>
+        Se il file manca o non dichiara la data, si ricade sull'embedded
+        e lo si DICHIARA nei warnings: nessun fallback silenzioso.
+        """
+        try:
+            raw = open(path, encoding="utf-8").read()
+        except FileNotFoundError:
+            return cls(warnings=["Corpus da file non trovato (%s): uso testi embedded. "
+                                 "Data di vigenza non dichiarata." % path])
+        except Exception as e:
+            return cls(warnings=["Corpus da file illeggibile (%s: %s): uso testi embedded. "
+                                 "Data di vigenza non dichiarata." % (path, e)])
 
-def apply_norme(rep):
-    mappa, DATA = load_norme(), _data()
-    def _resolve(v):
-        ks = v.get("norma_key") or []
-        if isinstance(ks, str):
-            ks = [ks]
-        ks = [k for k in ks if isinstance(k, str)]
-        t = (" ".join(str(v.get(f, "")) for f in ("titolo", "problema", "norma_violata", "issue", "norma"))).lower()
-        for L in re.findall(r"art\.?\s*117\s*c\.?\s*1\s*lett\.?\s*([a-z])", t):
-            ks.append("art117_c1_" + L)
-        if re.search(r"art\.?\s*116.{0,60}lett\.?\s*a", t):
-            ks.append("art116_c1_a")
-        for N in re.findall(r"art\.?\s*116.{0,80}lett\.?\s*b.{0,20}n\.?\s*([123])", t):
-            ks.append("art116_c1_b" + N)
-        if re.search(r"art\.?\s*114.{0,40}c\.?\s*2", t):
-            ks.append("art114_c2")
-        if re.search(r"art\.?\s*114.{0,40}c\.?\s*3", t):
-            ks.append("art114_c3_a")
-        if re.search(r"art\.?\s*118", t):
-            ks.append("art118_c1")
-        out = []
-        for k in ks:
-            if k in mappa and k not in out:
-                out.append(k)
-        return out
-    moved = []
-    for key in ("violazioni_critiche", "avvertenze", "warnings", "elementi_mancanti"):
-        items = rep.get(key)
-        if not isinstance(items, list):
-            continue
-        keep = []
-        for v in items:
-            if not isinstance(v, dict):
-                if key == "elementi_mancanti" and isinstance(v, str):
-                    ks = _resolve({"titolo": v, "norma_violata": v})
-                    keep.append(v + " | " + " | ".join(LABEL.get(k, k) + ": «" + mappa[k] + "»" for k in ks) if ks else v)
-                else:
-                    keep.append(v)
+        norme = dict(EMBED_NORME)
+        warn = []
+        for k, v in re.findall(r"\[KEY ([a-zA-Z0-9_]+)\]\s*\n(.+?)(?=\n\[KEY |\Z)", raw, re.S):
+            k = k.strip()
+            if k not in LABEL:
+                warn.append("Chiave sconosciuta nel corpus, ignorata: %s" % k)
                 continue
-            ks = _resolve(v)
-            if ks:
-                v["norma_violata"] = " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks)
-                v["norma_key"] = ks
-                v["titolo"] = re.sub(r"^\[(RIFERIMENTO DA VERIFICARE|DA VERIFICARE)[^\]]*\]\s*", "", str(v.get("titolo", "")))
-            else:
-                v["titolo"] = "[RIFERIMENTO DA VERIFICARE] " + re.sub(r"^\[[^\]]*\]\s*", "", str(v.get("titolo", "")))
-            if key == "violazioni_critiche" and "art114_c2" in (v.get("norma_key") or []):
-                moved.append(v); continue
-            keep.append(v)
-        rep[key] = keep
-    if moved:
-        for v in moved:
-            v["titolo"] = str(v.get("titolo", "")) + " (profilo condizionato: RCP non disponibile)"
-        rep["avvertenze"] = (rep.get("avvertenze") or []) + moved
-    return rep
+            norme[k] = v.strip()
 
-def gate_analogia(rep):
-    notes = rep.get("note_informative")
-    if not isinstance(notes, list):
-        notes = []
-    for key in ("violazioni_critiche", "avvertenze", "warnings", "elementi_mancanti"):
-        items = rep.get(key)
-        if not isinstance(items, list):
-            continue
-        keep = []
-        for v in items:
-            t = str(v).lower()
-            if any(p in t for p in ANALOGIA_TERMS):
-                notes.append("[DEGRADATO DAL FILTRO ANALOGIA] " + (str(v.get("titolo", ""))[:200] if isinstance(v, dict) else str(v)[:200]))
+        m = re.search(r"#\s*DATA_VIGENZA:\s*([0-9]{2}/[0-9]{2}/[0-9]{4})", raw)
+        data = m.group(1) if m else None
+        if not data:
+            warn.append("Il corpus non dichiara DATA_VIGENZA: la vigenza non e' verificabile.")
+
+        mancanti = [k for k in LABEL if k not in norme]
+        if mancanti:
+            warn.append("Chiavi assenti dal corpus: %s" % ", ".join(sorted(mancanti)))
+
+        return cls(norme, data, origine=path, warnings=warn)
+
+    def ha(self, key):
+        return key in self.norme
+
+    def cita(self, key):
+        """Citazione completa e opponibile. Il testo NON e' mai generato."""
+        if key not in self.norme:
+            raise KeyError("chiave normativa assente dal corpus: %s" % key)
+        vig = ("testo vigente al %s" % self.data_vigenza) if self.data_vigenza \
+            else "VIGENZA NON DICHIARATA DAL CORPUS"
+        return "%s, %s - %s, fonte Normattiva: \u00ab%s\u00bb" % (
+            FONTE, LABEL[key], vig, self.norme[key])
+
+    def cita_molte(self, keys):
+        return " | ".join(self.cita(k) for k in keys)
+
+    def fingerprint(self):
+        h = hashlib.sha256()
+        for k in sorted(self.norme):
+            h.update(k.encode() + b"\x00" + self.norme[k].encode() + b"\x00")
+        return h.hexdigest()[:12]
+
+
+# ----------------------------------------------------------------------------
+# TABELLA DI SEVERITA' - unica fonte di verita'
+# ----------------------------------------------------------------------------
+# critica    = violazione accertabile sul testo, indipendente da fonti esterne
+# avvertenza = accertamento subordinato a una variabile non risolta (RCP, layout)
+# mancante   = omissione di un elemento obbligatorio di contenuto
+
+CRITICA, AVVERTENZA, MANCANTE = "critica", "avvertenza", "mancante"
+_RANK = {CRITICA: 3, AVVERTENZA: 2, MANCANTE: 1}
+
+SEVERITA = {
+    "art113_c1_a": AVVERTENZA,
+    "art114_c2":   AVVERTENZA,   # conformita' al RCP: dipende da documento assente
+    "art114_c3_a": CRITICA,
+    "art114_c3_b": CRITICA,
+    "art116_c1_a": CRITICA,
+    "art116_c1_b1": MANCANTE,
+    "art116_c1_b2": MANCANTE,
+    "art116_c1_b3": MANCANTE,
+    "art117_c1_a": CRITICA,
+    "art117_c1_b": CRITICA,
+    "art117_c1_f": CRITICA,
+    "art117_c1_g": AVVERTENZA,   # assimilazione: dipende dal layout grafico
+    "art117_c1_i": AVVERTENZA,   # autodiagnosi: valutazione interpretativa
+    "art117_c1_l": CRITICA,
+    "art118_c1":  MANCANTE,
+    "art118_c8":  MANCANTE,
+}
+
+# Rilievi che per natura riguardano l'intero materiale, non una riga
+DOC_WIDE = {"art114_c3_a", "art114_c3_b", "art116_c1_a", "art116_c1_b1",
+            "art116_c1_b2", "art116_c1_b3", "art118_c1", "art118_c8"}
+
+# Coda operativa: (chiave, marcatore semantico, testo).
+# Si applica AL PIU' UNA coda per marcatore, e mai se il marcatore e' gia' presente
+# nell'azione del modello. Ordine = priorita'.
+AZIONE_SUFFIX = [
+    ("art117_c1_l", "sanabil",
+     "Le attestazioni di guarigione sono vietate in assoluto: non sono sanabili."),
+    ("art117_c1_f", "sanabil",
+     "Il divieto e' assoluto: non e' sanabile con aggiunta di fonte o disclaimer."),
+    ("art117_c1_b", "sanabil",
+     "Il divieto e' assoluto: non e' sanabile con aggiunta di fonte o disclaimer."),
+    ("art117_c1_a", "sanabil",
+     "Il divieto e' assoluto: non consente riformulazioni."),
+    ("art116_c1_a", "preminente",
+     "La dicitura va collocata in posizione preminente."),
+]
+
+AZIONE_DEFAULT = {
+    CRITICA:    "Eliminare o correggere l'elemento contestato secondo quanto descritto nel problema.",
+    AVVERTENZA: "Verificare l'elemento contestato rispetto alla fonte indicata prima di ogni divulgazione.",
+    MANCANTE:   "Integrare l'elemento obbligatorio conformemente alla norma citata.",
+}
+
+# ----------------------------------------------------------------------------
+# GATE
+# ----------------------------------------------------------------------------
+
+PROMPT_MARKERS = [
+    "[{'type'", '[{"type"', "'type': 'text'", '"type": "text"',
+    "sei un senior", "system prompt", "knowledge_chunks", "skill_prompt",
+    "regole fondamentali", "<|", "assistant:", "role:",
+]
+ANALOGIA_TERMS = [
+    "per analogia", "in via estensiva", "applicabile in quanto compatibile",
+    "eventuali linee guida", "analogicamente", "mutatis mutandis",
+]
+RE_CHIAVE_NUDA = re.compile(r"\bart\d{3}_c\d[a-z0-9_]*\b")
+RE_SERIALIZZATO = re.compile(r"[\[{]\s*['\"]\w+['\"]\s*:")
+
+CAMPI_OBBLIGATORI = ("titolo", "problema", "norma_violata", "azione")
+# Solo questi finiscono sotto gli occhi del cliente: solo questi vanno ispezionati
+# per leak di chiavi, prompt e strutture serializzate.
+CAMPI_VISIBILI = ("titolo", "problema", "norma_violata", "azione", "posizione", "quote")
+
+
+class ReportNonValido(Exception):
+    def __init__(self, problemi):
+        self.problemi = problemi
+        super().__init__("Report bloccato dai gate:\n- " + "\n- ".join(problemi))
+
+
+# ----------------------------------------------------------------------------
+# NORMALIZZAZIONE
+# ----------------------------------------------------------------------------
+
+def _s(v, d=""):
+    return str(v if v is not None else d).strip()
+
+
+def _oneline(v, d=""):
+    return _s(v, d).replace("\r", " ").split("\n")[0].strip() or d
+
+
+def _keys(v):
+    ks = v.get("norma_key") or v.get("norma_keys") or []
+    if isinstance(ks, str):
+        ks = [ks]
+    return [k for k in ks if isinstance(k, str) and k in LABEL]
+
+
+def _estrai_chiavi_da_testo(v):
+    """Fallback: deduce le chiavi da riferimenti testuali. NON genera testo di legge."""
+    t = " ".join(_s(v.get(f)) for f in ("titolo", "problema", "norma_violata", "norma", "riferimento")).lower()
+    ks = []
+    for L in re.findall(r"art\.?\s*117\s*c\.?\s*1\s*lett\.?\s*([a-z])\b", t):
+        ks.append("art117_c1_" + L)
+    if re.search(r"art\.?\s*116[^.]{0,40}lett\.?\s*a\b", t):
+        ks.append("art116_c1_a")
+    for N in re.findall(r"art\.?\s*116[^.]{0,60}lett\.?\s*b[^.]{0,20}n\.?\s*([123])", t):
+        ks.append("art116_c1_b" + N)
+    if re.search(r"art\.?\s*114\s*c\.?\s*2\b", t):
+        ks.append("art114_c2")
+    if re.search(r"art\.?\s*114\s*c\.?\s*3[^.]{0,20}lett\.?\s*b\b", t):
+        ks.append("art114_c3_b")
+    if re.search(r"art\.?\s*114\s*c\.?\s*3", t):
+        ks.append("art114_c3_a")
+    if re.search(r"art\.?\s*118", t):
+        ks.append("art118_c1")
+    out = []
+    for k in ks:
+        if k in LABEL and k not in out:
+            out.append(k)
+    return out
+
+
+def normalizza(rep):
+    """
+    Accetta lo schema legacy (violazioni_critiche / avvertenze / violations /
+    elementi_mancanti) e lo converte in un'unica lista `rilievi`.
+    NON appiattisce nulla in stringhe: la struttura viene preservata.
+    """
+    rilievi = []
+    for sez in ("violazioni_critiche", "violations", "avvertenze", "warnings",
+                "elementi_mancanti", "rilievi"):
+        for v in (rep.get(sez) or []):
+            if isinstance(v, dict):
+                d = dict(v)
             else:
-                keep.append(v)
-        rep[key] = keep
+                d = {"titolo": _s(v)[:120], "problema": _s(v)}
+            if not _s(d.get("problema")):
+                d["problema"] = _s(d.get("testo") or d.get("descrizione")
+                                   or d.get("issue") or d.get("elemento") or d.get("titolo"))
+            if not _s(d.get("titolo")):
+                d["titolo"] = _s(d.get("title") or d.get("elemento") or "Rilievo")
+            d["titolo"] = re.sub(r"^\[[^\]]{0,60}\]\s*", "", d["titolo"]).strip()
+            d["norma_key"] = _keys(d) or _estrai_chiavi_da_testo(d)
+            d["azione"] = _s(d.get("azione") or d.get("azione_richiesta"))
+            d["quote"] = _s(d.get("quote") or d.get("testo_contestato"))
+            d["_origine"] = sez
+            rilievi.append(d)
+
+    rep = dict(rep)
+    rep["rilievi"] = rilievi
+    for k in ("violazioni_critiche", "violations", "avvertenze", "warnings", "elementi_mancanti"):
+        rep.pop(k, None)
+
+    claims = []
+    for c in (rep.get("claims_rcp") or []):
+        if isinstance(c, dict):
+            claims.append({"claim": _s(c.get("claim")),
+                           "sezioni_rcp": _s(c.get("sezioni_rcp") or c.get("sezioni")),
+                           "status": _s(c.get("status"), "UNVERIFIABLE_RCP_NOT_IN_KB")})
+        else:
+            claims.append({"claim": _s(c), "sezioni_rcp": "",
+                           "status": "UNVERIFIABLE_RCP_NOT_IN_KB"})
+    rep["claims_rcp"] = [c for c in claims if c["claim"]]
+
+    notes = []
+    for n in (rep.get("note_informative") or []):
+        s = (_s(n.get("titolo")) + " " + _s(n.get("testo"))).strip() if isinstance(n, dict) else _s(n)
+        if s:
+            notes.append(s)
     rep["note_informative"] = notes
     return rep
 
-def dedup_mancanti(rep):
-    crit_txt = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)).lower()
-    crit_keys = set()
-    for v in (rep.get("violazioni_critiche") or []):
-        if isinstance(v, dict):
-            crit_keys.update(v.get("norma_key") or [])
-    items = rep.get("elementi_mancanti")
-    if not isinstance(items, list):
-        return rep
-    keep = []
-    for v in items:
-        t = str(v).lower()
-        if ("art116_c1_a" in crit_keys) and ("lett. a" in t or "identific" in t):
+
+def deduplica(rep):
+    """Due rilievi sono lo stesso rilievo se hanno stesse chiavi e stessa quote."""
+    visti, keep = set(), []
+    for v in rep["rilievi"]:
+        sig = (tuple(sorted(v["norma_key"])), _norm(v.get("quote")) or _norm(v["titolo"])[:60])
+        if sig in visti:
             continue
-        if "profilo di rischio" in t and "profilo di rischio" in crit_txt:
-            continue
+        visti.add(sig)
         keep.append(v)
-    rep["elementi_mancanti"] = keep
+    rep["rilievi"] = keep
     return rep
 
-def _fascia(v):
-    t = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
-    return "sotto i 2" in t or "bambini" in t or "fascia" in t
 
-def ensure_pediatrica(rep, text):
-    avv = rep.get("avvertenze") or []
-    has = any("art114_c2" in (v.get("norma_key") or []) and _fascia(v) for v in avv if isinstance(v, dict))
-    claims_txt = " ".join(str(c) for c in (rep.get("claims_rcp") or [])).lower()
-    if not has and "sotto i 2" in claims_txt:
-        mappa, DATA = load_norme(), _data()
-        two = "Se il RCP non autorizza la fascia: eliminare integralmente il claim. Se il RCP la autorizza: il riferimento puo' restare, ma l'aggettivo 'sicuro' va eliminato comunque (v. violazione sulla sicurezza assoluta)."
-        avv.append({"titolo": "Claim pediatrico - fascia sotto i 2 anni - conformita' RCP non verificabile (v. la violazione critica sull'aggettivo di sicurezza assoluta)", "problema": "L'indicazione 'bambini sotto i 2 anni' configura claim terapeutico verificabile solo contro il RCP (fascia di eta' autorizzata), assente nella knowledge base.", "posizione": "Seconda riga", "norma_key": ["art114_c2"], "norma_violata": "D.Lgs 219/2006, Art. 114 c.2 - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c2", "") + "»", "azione": two})
-        rep["avvertenze"] = avv
-    if any("art114_c2" in (v.get("norma_key") or []) and _fascia(v) for v in (rep.get("avvertenze") or []) if isinstance(v, dict)):
-        rep["avvertenze"] = [v for v in rep["avvertenze"] if not ("24 ore" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower())]
-    for v in (rep.get("violazioni_critiche") or []):
-        T = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
-        if isinstance(v, dict) and "sicur" in T and ("bambini" in T or "2 anni" in T) and "v. anche" not in str(v.get("problema", "")):
-            v["problema"] = str(v.get("problema", "")) + " (v. anche l'avvertenza sulla conformita' RCP della stessa frase)."
-    return rep
+def _norm(t):
+    return re.sub(r"[^a-z0-9]+", "", _s(t).lower())
 
-def ensure_testimonianza(rep, text):
-    tl = (text or "").lower()
-    if not ("sparisce in" in tl or "sig.ra" in tl):
-        return rep
-    if any("art117_c1_l" in (v.get("norma_key") or []) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)):
-        return rep
-    mappa, DATA = load_norme(), _data()
-    rep.setdefault("violazioni_critiche", []).append({"titolo": "Testimonianza con attestazione di guarigione", "problema": "La testimonianza virgolettata con claim di esito terapeutico costituisce attestazione di guarigione vietata in assoluto, indipendentemente dalla veridicita'.", "posizione": "Quarta riga", "norma_key": ["art117_c1_l"], "norma_violata": "D.Lgs 219/2006, Art. 117 c.1 lett. l - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_l", "") + "»", "azione": "Eliminare integralmente la testimonianza: le attestazioni di guarigione sono vietate in assoluto e non sono sanabili."})
-    q = re.search(r'"([^"]{10,120})"', text or "")
-    if q:
-        for v in (rep.get("violazioni_critiche") or []):
-            if isinstance(v, dict) and "art117_c1_l" in (v.get("norma_key") or []) and q.group(1)[:20] not in str(v.get("problema", "")):
-                v["problema"] = str(v.get("problema", "")) + " Il testo contestato e': " + chr(34) + q.group(1) + chr(34) + "."
-    return rep
 
-def ensure_profilo(rep, text):
-    tl = (text or "").lower()
-    benefici = any(w in tl for w in ("n.1", "privo", "efficace", "sparisce", "sicuro", "consigliato"))
-    rischi = any(w in tl for w in ("effetti indesiderati", "controindicazioni", "avvertenze", "profilo di rischio"))
-    if not (benefici and not rischi):
-        return rep
-    if any("profilo di rischio" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)):
-        return rep
-    mappa, DATA = load_norme(), _data()
-    rep.setdefault("violazioni_critiche", []).append({"titolo": "Omissione totale del profilo di rischio", "problema": "Il materiale presenta solo benefici senza informazioni sul profilo di rischio, impedendo una presentazione obiettiva e bilanciata.", "posizione": "Intero materiale", "norma_key": ["art114_c3_a", "art114_c3_b"], "norma_violata": "D.Lgs 219/2006, Art. 114 c.3 lett. a - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c3_a", "") + "»", "azione": "Integrare il materiale con il profilo di rischio del medicinale in modo bilanciato rispetto ai benefici, o rimandare al foglio illustrativo (obbligatorio ex art. 116 c.1 lett. b n.3)."})
-    return rep
+# ----------------------------------------------------------------------------
+# CLASSIFICAZIONE
+# ----------------------------------------------------------------------------
 
-def ensure_claims(rep, text):
-    tl = (text or "").lower()
-    claims = rep.get("claims_rcp") or []
-    txt = " ".join(str(c) for c in claims).lower()
-    add = []
-    if "tosse secca e grassa" in tl and "secca e grassa" not in txt:
-        add.append({"claim": "per tosse secca e grassa (doppia indicazione sintomatologica)", "status": "UNVERIFIABLE_RCP_NOT_IN_KB - verificare contro RCP sez. 4.1"})
-    if "sotto i 2" in tl and "sotto i 2" not in txt:
-        add.append({"claim": "anche per bambini sotto i 2 anni (fascia eta' pediatrica)", "status": "UNVERIFIABLE_RCP_NOT_IN_KB - verificare contro RCP sez. 4.2/4.3"})
-    if "24 ore" in tl and "24 ore" not in txt:
-        add.append({"claim": "la tosse sparisce in 24 ore (tempo di azione)", "status": "UNVERIFIABLE_RCP_NOT_IN_KB - verificare contro RCP sez. 5.1"})
-    if add:
-        rep["claims_rcp"] = claims + add
-    for c in rep.get("claims_rcp") or []:
-        if isinstance(c, dict) and "24 ore" in str(c.get("claim", "")).lower():
-            stt = str(c.get("status", ""))
-            if "testimonianza" not in stt.lower():
-                c["status"] = stt + "; va comunque eliminato in quanto parte di testimonianza vietata ex art. 117 c.1 lett. l"
-    return rep
-
-def ensure_doppia(rep, text):
-    tl = (text or "").lower()
-    if "tosse secca e grassa" not in tl:
-        return rep
-    allv = (rep.get("violazioni_critiche") or []) + (rep.get("avvertenze") or [])
-    if any("autodiagnosi" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() or "art117_c1_i" in (v.get("norma_key") or []) for v in allv if isinstance(v, dict)):
-        return rep
-    mappa, DATA = load_norme(), _data()
-    rep.setdefault("avvertenze", []).append({"titolo": "Doppia indicazione sintomatologica - rischio errata autodiagnosi", "problema": "La menzione 'per tosse secca e grassa' presenta due indicazioni sintomatologiche distinte che possono indurre errata autodiagnosi senza consulto medico.", "posizione": "Prima riga", "norma_key": ["art117_c1_i"], "norma_violata": "D.Lgs 219/2006, Art. 117 c.1 lett. i - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_i", "") + "»", "azione": "Verificare contro RCP sez. 4.1 se entrambe le indicazioni sono autorizzate; valutare invito esplicito al consulto medico."})
-    return rep
-
-def canone_chiavi(rep):
-    mappa, DATA = load_norme(), _data()
-    def stampa(ks):
-        return " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks if k in mappa)
-    for v in (rep.get("violazioni_critiche") or []):
-        if not isinstance(v, dict):
+def classifica(rep):
+    """Assegna la severita' da tabella. Il modello non decide la gravita'."""
+    for v in rep["rilievi"]:
+        ks = v["norma_key"]
+        if not ks:
+            v["severita"] = AVVERTENZA
+            v["_no_key"] = True
             continue
-        t = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
-        ks = list(v.get("norma_key") or [])
-        ch = False
-        if "profilo di rischio" in t:
-            for k in ("art114_c3_a", "art114_c3_b"):
-                if k not in ks:
-                    ks.append(k); ch = True
-        if "sicurezza assoluta" in t:
-            for k in ("art114_c3_a", "art117_c1_b"):
-                if k not in ks:
-                    ks.append(k); ch = True
-        if ch:
-            v["norma_key"] = ks
-            v["norma_violata"] = stampa(ks)
-    for v in (rep.get("avvertenze") or []):
-        if not isinstance(v, dict):
+        sev = max((SEVERITA.get(k, AVVERTENZA) for k in ks), key=lambda s: _RANK[s])
+        # override esplicito del modello, solo verso il basso e solo se motivato
+        if v.get("dipende_da_rcp") and sev == CRITICA and set(ks) <= {"art114_c2"}:
+            sev = AVVERTENZA
+        v["severita"] = sev
+    return rep
+
+
+def cita_norme(rep, corpus):
+    """Il campo norma_violata viene SEMPRE ricostruito dal corpus."""
+    for v in rep["rilievi"]:
+        ks = [k for k in v["norma_key"] if corpus.ha(k)]
+        v["norma_key"] = ks
+        v["norma_violata"] = corpus.cita_molte(ks) if ks else ""
+    return rep
+
+
+def ancora_posizioni(rep, testo):
+    """
+    Posizione derivata dal testo letterale contestato.
+    Nessun marker cablato: se la quote non c'e', si dichiara.
+    """
+    righe = [l for l in _s(testo).split("\n") if l.strip()]
+
+    def trova(q):
+        qn = _norm(q)
+        if not qn or len(qn) < 6:
+            return None
+        for i, riga in enumerate(righe, 1):
+            if qn in _norm(riga):
+                # frase che contiene la quote, non troncamento fisso
+                frasi = re.split(r"(?<=[.!?])\s+", riga)
+                for f in frasi:
+                    if qn in _norm(f):
+                        f = f.strip()
+                        return "Riga %d (%s)" % (i, f if len(f) <= 90 else f[:87] + "...")
+                return "Riga %d" % i
+        return None
+
+    for v in rep["rilievi"]:
+        if v["severita"] == MANCANTE or set(v["norma_key"]) <= DOC_WIDE:
+            v["posizione"] = "Intero materiale"
             continue
-        t = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
-        if ("fascia" in t or "pediatric" in t or "sotto i 2" in t) and "art114_c2" in (v.get("norma_key") or []):
-            v["norma_key"] = ["art114_c2"]
-            v["norma_violata"] = stampa(["art114_c2"])
-    return rep
-
-def ensure_gusto(rep, text):
-    tl = (text or "").lower()
-    if not ("gusto" in tl or "miele" in tl):
-        return rep
-    allv = (rep.get("violazioni_critiche") or []) + (rep.get("avvertenze") or [])
-    if any("art117_c1_g" in (v.get("norma_key") or []) or "gusto" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() for v in allv if isinstance(v, dict)):
-        return rep
-    mappa, DATA = load_norme(), _data()
-    rep.setdefault("avvertenze", []).append({"titolo": "Enfasi organolettica - rischio assimilazione ad alimento", "problema": "La menzione del gusto ('gusto miele') puo' configurare enfasi sulla gradevolezza organolettica e assimilazione del medicinale a un prodotto alimentare, specie se accompagnata da layout grafico evocativo.", "posizione": "Quinta riga", "norma_key": ["art117_c1_g"], "norma_violata": "D.Lgs 219/2006, Art. 117 c.1 lett. g - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_g", "") + "»", "azione": "Verificare che il layout grafico non enfatizzi la componente organolettica fino ad assimilare il medicinale a un prodotto alimentare; in caso positivo, ridimensionare o eliminare il riferimento al gusto."})
-    return rep
-
-def ensure_chiavi(rep):
-    mappa, DATA = load_norme(), _data()
-    for v in (rep.get("violazioni_critiche") or []) + (rep.get("avvertenze") or []):
-        if not isinstance(v, dict):
-            continue
-        t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower()
-        ks = v.get("norma_key") or []
-        ks = list(ks) if isinstance(ks, list) else [ks]
-        ch = False
-        if ("farmacist" in t or "consigliato dal" in t or "dott." in t or "pneumologo" in t) and "art117_c1_f" not in ks:
-            ks.append("art117_c1_f"); ch = True
-        if ("effetti collaterali" in t or "privo di effetti" in t) and "art114_c3_a" not in ks:
-            ks.append("art114_c3_a"); ch = True
-        if ("n.1" in t or "primato" in t or "superior" in t) and "art117_c1_b" not in ks:
-            ks.append("art117_c1_b"); ch = True
-        if "118" in t and "art118_c8" not in ks:
-            ks += [k for k in ("art118_c1", "art118_c8") if k not in ks]; ch = True
-        if ch:
-            ks = [k for k in ks if k in mappa]
-            v["norma_key"] = ks
-            v["norma_violata"] = " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks)
-    return rep
-
-def ensure_sicuro_critica(rep, text):
-    tl = (text or "").lower()
-    if not ("sicuro" in tl and "bambini" in tl):
-        return rep
-    crit = rep.get("violazioni_critiche") or []
-    def _t(v):
-        return (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
-    if any("sicur" in _t(v) and "effetti collaterali" not in _t(v) for v in crit if isinstance(v, dict)):
-        return rep
-    for v in crit:
-        if isinstance(v, dict) and "sicur" in _t(v) and "effetti collaterali" in _t(v):
-            v["titolo"] = "Affermazione di assenza totale di effetti collaterali"
-            v["problema"] = re.sub(r",?\s*sicuro anche per bambini sotto i 2 anni", "", str(v.get("problema", "")))
-    mappa, DATA = load_norme(), _data()
-    crit.append({"titolo": "Aggettivo di sicurezza assoluta su fascia pediatrica", "problema": "L'aggettivo 'sicuro' in 'sicuro anche per bambini sotto i 2 anni' costituisce affermazione categorica di sicurezza assoluta, vietata indipendentemente dal RCP (profilo incondizionato). Per la fascia di eta' v. l'avvertenza dedicata.", "posizione": "Seconda riga", "norma_key": ["art114_c3_a", "art117_c1_b"], "norma_violata": "D.Lgs 219/2006, Art. 114 c.3 lett. a - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c3_a", "") + "» | D.Lgs 219/2006, Art. 117 c.1 lett. b - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_b", "") + "»", "azione": "Eliminare l'aggettivo 'sicuro'. Il profilo di sicurezza assoluta e' violazione non sanabile, indipendente dalla verifica RCP sulla fascia."})
-    rep["violazioni_critiche"] = crit
-    for v in (rep.get("avvertenze") or []):
-        if isinstance(v, dict) and "art114_c2" in (v.get("norma_key") or []) and "sicur" in str(v.get("problema", "")).lower():
-            v["titolo"] = "Claim pediatrico - fascia sotto i 2 anni - conformita' RCP non verificabile (v. la violazione critica sull'aggettivo di sicurezza assoluta)"
-            v["problema"] = "L'indicazione 'bambini sotto i 2 anni' configura claim terapeutico verificabile solo contro il RCP (fascia di eta' autorizzata), assente nella knowledge base. Il profilo dell'aggettivo 'sicuro' e' contestato separatamente come violazione incondizionata."
-    for v in crit:
-        if isinstance(v, dict):
-            t = _t(v)
-            if "sicurezza assoluta" in t or ("effetti collaterali" in t and "bambini" not in t):
-                v["problema"] = re.sub(r"\(v\. anche l'avvertenza sulla conformita'? ?RCP della stessa frase\)", "", str(v.get("problema", "")))
-    return rep
-
-def demote_doppia(rep):
-    crit, keep, moved = rep.get("violazioni_critiche") or [], [], []
-    for v in crit:
-        if isinstance(v, dict) and ("autodiagnosi" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() or (v.get("norma_key") or []) == ["art117_c1_i"]):
-            moved.append(v)
+        p = trova(v.get("quote")) or trova(v.get("problema"))
+        if p:
+            v["posizione"] = p
+        elif _s(v.get("posizione")):
+            v["posizione"] = _s(v["posizione"])
+            v["_pos_non_ancorata"] = True
         else:
-            keep.append(v)
-    if moved:
-        rep["avvertenze"] = (rep.get("avvertenze") or []) + moved
-    rep["violazioni_critiche"] = keep
+            v["posizione"] = "Non localizzato nel testo fornito"
+            v["_pos_non_ancorata"] = True
     return rep
 
-def dedup_critici(rep):
-    seen, keep = set(), []
-    for v in (rep.get("violazioni_critiche") or []):
-        t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower() if isinstance(v, dict) else str(v).lower()
-        sig = None
-        if "identific" in t and "medicinale" in t:
-            sig = "identificazione"
-        if "profilo di rischio" in t:
-            sig = "profilo"
-        if sig and sig in seen:
+
+def rimandi_incrociati(rep):
+    """
+    Due rilievi sulla STESSA quote con severita' diverse si rimandano a vicenda.
+    Meccanismo generico: nessun caso particolare cablato.
+    """
+    per_quote = {}
+    for v in rep["rilievi"]:
+        q = _norm(v.get("quote"))
+        if q and len(q) > 8:
+            per_quote.setdefault(q, []).append(v)
+
+    ordinati = ordina(rep)
+    numero = {id(v): (sev, i) for sev, lst in ordinati.items()
+              for i, v in enumerate(lst, 1)}
+    nome = {CRITICA: "violazione critica", AVVERTENZA: "avvertenza", MANCANTE: "elemento mancante"}
+
+    for q, gruppo in per_quote.items():
+        if len(gruppo) < 2:
             continue
-        if sig:
-            seen.add(sig)
-        keep.append(v)
-    rep["violazioni_critiche"] = keep
+        for v in gruppo:
+            altri = []
+            for w in gruppo:
+                if w is v:
+                    continue
+                sev, i = numero.get(id(w), (None, None))
+                if sev:
+                    altri.append("%s n. %d" % (nome[sev], i))
+            if altri and "v. anche" not in v["problema"]:
+                v["problema"] = v["problema"].rstrip() + \
+                    " Sulla stessa frase v. anche: %s." % ", ".join(altri)
     return rep
 
-def clean_mancanti(rep):
-    items = rep.get("elementi_mancanti")
-    if isinstance(items, list):
-        rep["elementi_mancanti"] = [v for v in items if len(re.sub(r"[-–•:\s]", "", str(v))) >= 6]
+
+def completa_azioni(rep):
+    for v in rep["rilievi"]:
+        a = _s(v.get("azione"))
+        if not a:
+            if v["severita"] == MANCANTE:
+                a = "Integrare il materiale con: %s." % v["titolo"].rstrip(".").lower()
+            else:
+                a = AZIONE_DEFAULT[v["severita"]]
+        usati = set()
+        for k, marker, testo in AZIONE_SUFFIX:
+            if k not in v["norma_key"] or marker in usati:
+                continue
+            usati.add(marker)
+            if marker not in a.lower():
+                a = (a.rstrip() + " " + testo).strip()
+        v["azione"] = pulisci(a)
+        v["problema"] = pulisci(v["problema"])
+        v["titolo"] = pulisci(v["titolo"])
     return rep
 
-def dedup_autorizzazione(rep):
-    items = rep.get("elementi_mancanti") or []
+
+def pulisci(s):
+    s = _s(s)
+    s = s.replace("...", "\x00")
+    s = re.sub(r"\.(\s*\.)+", ".", s)      # ". ." e ".."
+    s = s.replace("\x00", "...")
+    s = re.sub(r"\s{2,}", " ", s)
+    s = re.sub(r"\s+([,.;:])", r"\1", s)
+    return s.strip()
+
+
+def filtro_analogia(rep):
     keep = []
-    for v in items:
-        t = re.sub(r"[^a-z0-9]", "", str(v).lower())
-        dup = False
-        for k in keep:
-            kt = re.sub(r"[^a-z0-9]", "", str(k).lower())
-            if t and kt and ("autorizzazioneministeriale" in t and "autorizzazioneministeriale" in kt):
-                dup = True
-                break
-        if not dup:
-            keep.append(v)
-    rep["elementi_mancanti"] = keep
+    for v in rep["rilievi"]:
+        blob = (v["titolo"] + " " + v["problema"] + " " + _s(v.get("norma_violata")) + " " + v["azione"]).lower()
+        if any(t in blob for t in ANALOGIA_TERMS):
+            rep["note_informative"].append(
+                "[DEGRADATO DAL FILTRO ANALOGIA] " + v["titolo"][:180] +
+                " - il rilievo si fondava su un'estensione analogica e non su una norma "
+                "direttamente applicabile: richiede valutazione umana.")
+            continue
+        keep.append(v)
+    rep["rilievi"] = keep
     return rep
 
-def fix_notes(rep):
-    notes = rep.get("note_informative")
-    if not isinstance(notes, list):
-        return rep
-    crit_txt = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)).lower()
-    out = []
-    for nte in notes:
-        s = str(nte.get("titolo", "") + " " + nte.get("testo", "")).strip() if isinstance(nte, dict) else str(nte)
-        sl = s.lower()
-        if "oltre a quelli già contestati" in sl or "non presenta titoli o qualifiche particolari" in sl or "direttore sanitario" in sl or "claim da verificare contro rcp" in sl or "non sono presenti titoli, qualifiche" in sl or "denominazione comune" in sl or ("inn" in sl and "sostanza" in sl) or ("il materiale presenta il titolo" in sl and len(sl) < 150):
+
+def pulisci_note(rep):
+    """Una nota che non segnala nulla non e' una nota."""
+    corpo = _norm(" ".join(v["titolo"] + v["problema"] for v in rep["rilievi"]))
+    out, visti = [], set()
+    for s in rep["note_informative"]:
+        s = pulisci(s)
+        if len(_norm(s)) < 25:
             continue
-        dup = any(f in sl for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian")) and any(f in crit_txt for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian"))
-        if dup:
+        # una nota che dichiara l'assenza di rilievi non e' una nota
+        if re.search(r"(?i)\bnon\s+(presenta|presentano|sono\s+presenti|risultano|vi\s+sono|"
+                     r"e'\s+present\w+|contiene|compaiono)\b.{0,60}"
+                     r"(oltre a quell|particolar|ulterior|altri element|di rilievo|"
+                     r"gia'? contestat)", s):
             continue
-        if "informazione non presente nei documenti caricati" in sl and not any(w in sl for w in ("rcp", "knowledge base", "layout", "grafic", "immagine")):
-            s = s.replace("Informazione non presente nei documenti caricati. Verifica manuale richiesta.", "").replace("Informazione non presente nei documenti caricati.", "").strip()
-        if s.strip():
-            out.append(s)
+        s = re.sub(r"(?i)\s*informazione non presente nei documenti caricati\.?\s*", " ", s)
+        s = re.sub(r"(?i)\s*verifica manuale richiesta\.?\s*$", "", s).strip()
+        n = _norm(s)
+        if not n or n in visti:
+            continue
+        if len(n) > 40 and n[:60] in corpo:      # duplica un rilievo gia' contestato
+            continue
+        visti.add(n)
+        out.append(s if s.endswith((".", "!", "?")) else s + ".")
     rep["note_informative"] = out
     return rep
 
-def fix_counts(rep):
-    for rk in ("riepilogo_esecutivo", "riepilogo"):
-        r = rep.get(rk)
-        if isinstance(r, str):
-            r = re.sub(r"\d+ violazioni critiche", str(len(rep.get("violazioni_critiche") or [])) + " violazioni critiche", r)
-            r = re.sub(r"\d+ avvertenze", str(len(rep.get("avvertenze") or [])) + " avvertenze", r)
-            r = re.sub(r"Mancano inoltre \d+ elementi mancanti", "Mancano inoltre " + str(len(rep.get("elementi_mancanti") or [])) + " elementi obbligatori", r)
-            r = re.sub(r"\d+ elementi (mancanti|obbligatori)", str(len(rep.get("elementi_mancanti") or [])) + " elementi obbligatori", r)
-            r = re.sub(r"\d+ claim da verificare", str(len(rep.get("claims_rcp") or [])) + " claim da verificare", r)
-            rep[rk] = r
-    return rep
 
-def ensure_perimetro(rep):
-    BLOCK = " PERIMETRO DELLA VERIFICA - VERIFICATO: divieti assoluti art. 117 c.1; elementi obbligatori artt. 116 e 118; presentazione obiettiva art. 114 c.3. NON VERIFICATO (richiede verifica umana): conformita' al RCP (assente nella knowledge base); layout grafico e enfasi visiva; canale di diffusione."
-    def walk(x):
-        if isinstance(x, dict):
-            return {k: walk(v) for k, v in x.items()}
-        if isinstance(x, list):
-            return [walk(v) for v in x]
-        if isinstance(x, str) and "corpus normativo consultato" in x.lower() and "non verificato" not in x.lower():
-            return x + BLOCK
-        return x
-    return walk(rep)
+def ordina(rep):
+    g = {CRITICA: [], AVVERTENZA: [], MANCANTE: []}
+    for v in rep["rilievi"]:
+        g[v["severita"]].append(v)
+    return g
 
-def clean_azioni(rep):
-    def walk(x):
-        if isinstance(x, dict):
-            return {k: walk(v) for k, v in x.items()}
-        if isinstance(x, list):
-            return [walk(v) for v in x]
-        if isinstance(x, str):
-            x = re.sub(r",?\s*salvo che il medicinale sia costituito da più sostanze[^.]*\.?", "", x)
-            x = re.sub(r";?\s*se contiene più sostanze attive[^.]*\.?", "", x)
-            return x
-        return x
-    return walk(rep)
 
-def ensure_azioni(rep):
-    for key in ("violazioni_critiche", "avvertenze"):
-        for v in (rep.get(key) or []):
-            if not isinstance(v, dict):
-                continue
-            a = str(v.get("azione_richiesta", "") or v.get("azione", "")).strip()
-            if a:
-                continue
-            ks = [str(k) for k in (v.get("norma_key") or [])]
-            if any(k.startswith("art117") for k in ks):
-                a = "Eliminare integralmente l'elemento contestato: i divieti assoluti ex art. 117 c.1 non consentono riformulazioni."
-            elif any(k.startswith("art116") or k.startswith("art118") for k in ks):
-                a = "Integrare l'elemento obbligatorio mancante conformemente alla norma citata e al RCP."
-            elif any(k.startswith("art114") for k in ks):
-                a = "Ribilanciare la presentazione integrando il profilo di rischio o correggere il claim secondo quanto descritto nel problema."
-            else:
-                a = "Rivedere il punto come descritto nel problema. Validazione umana richiesta."
-            v["azione"] = a
-            v["azione_richiesta"] = a
-    return rep
+def conta(rep):
+    g = ordina(rep)
+    return (len(g[CRITICA]), len(g[AVVERTENZA]), len(g[MANCANTE]),
+            len(rep.get("claims_rcp") or []))
 
-def fix_punti(rep):
-    def walk(x):
-        if isinstance(x, dict):
-            return {k: walk(v) for k, v in x.items()}
-        if isinstance(x, list):
-            return [walk(v) for v in x]
-        if isinstance(x, str):
-            x = x.replace("...", "\x00")
-            x = re.sub(r"\.(\s*\.)+", ".", x)
-            x = x.replace("\x00", "...")
-            return x
-        return x
-    return walk(rep)
 
-def fix_ident(rep):
-    for v in (rep.get("violazioni_critiche") or []):
-        if not isinstance(v, dict):
-            continue
-        if "art116_c1_a" not in (v.get("norma_key") or []):
-            continue
-        p = str(v.get("problema", "")).lower()
-        if ": art." in p or "identificazione chiara" in p or "identificazione del prodotto" in p:
-            v["problema"] = "Il prodotto non e' chiaramente identificato come medicinale. La dicitura 'Disponibile in farmacia senza ricetta' non soddisfa l'obbligo di chiara identificazione del prodotto come medicinale."
-        v["azione"] = "Inserire in posizione preminente la formula esplicita 'Medicinale senza obbligo di prescrizione' o equivalente che identifichi chiaramente il prodotto come medicinale."
-        v["azione_richiesta"] = v["azione"]
-    return rep
+# ----------------------------------------------------------------------------
+# VALIDAZIONE (bloccante)
+# ----------------------------------------------------------------------------
 
-def enrich_azioni(rep):
-    OPS = [("art116_c1_a", "posizione preminente", "Inserire in posizione preminente la formula esplicita 'Medicinale senza obbligo di prescrizione' o equivalente che identifichi chiaramente il prodotto come medicinale."), ("art117_c1_f", "non e' sanabile", "Il riferimento va eliminato integralmente: non e' sanabile con aggiunta di fonte o disclaimer."), ("art117_c1_b", "non e' sanabile", "L'affermazione va eliminata: non e' sanabile con aggiunta di fonte o disclaimer."), ("art117_c1_l", "non sono sanabili", "La testimonianza va eliminata integralmente: le attestazioni di guarigione sono vietate in assoluto e non sono sanabili."), ("art117_c1_g", "descrizione neutrale", "Rimuovere o ridurre a mera descrizione neutrale il riferimento, eliminando qualsiasi elemento grafico che evochi prodotti alimentari."), ("art114_c3_a", "profilo di rischio", "La presentazione va ribilanciata integrando il profilo di rischio (controindicazioni, effetti indesiderati, avvertenze) come da RCP.")]
-    for v in (rep.get("violazioni_critiche") or []):
-        if not isinstance(v, dict):
-            continue
-        a = str(v.get("azione_richiesta", "") or v.get("azione", ""))
-        t = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
-        for k, marker, txt in OPS:
-            if k in (v.get("norma_key") or []) and marker not in a.lower():
-                if k == "art114_c3_a" and "profilo di rischio" not in t:
-                    continue
-                a = (a + " " + txt).strip()
-        v["azione"] = a
-        v["azione_richiesta"] = a
-    return rep
+def valida(rep, corpus, strict=True):
+    p = []
 
-def clean_formule(rep):
-    crit = rep.get("violazioni_critiche") or []
-    idx_test = 0
-    for i, v in enumerate(crit):
-        if isinstance(v, dict) and "testimonian" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower():
-            idx_test = i + 1
-    def walk(x):
-        if isinstance(x, dict):
-            return {k: walk(v) for k, v in x.items()}
-        if isinstance(x, list):
-            return [walk(v) for v in x]
-        if isinstance(x, str):
-            x = x.replace("formula obbligatoria", "formula consigliata di prassi (non prescritta dalla norma)")
-            x = x.replace("(art. 114 c.2 e art. 117 c.1 lett. a)", "(art. 114 c.2)")
-            x = re.sub(r"\.\.+", ".", x)
-            if idx_test and "24 ore" in x:
-                x = re.sub(r"violazione critica n\. \d+", "violazione critica n. " + str(idx_test), x)
-                x = re.sub(r"vedi violazione n\. \d+", "vedi violazione n. " + str(idx_test), x)
-            return x
-        return x
-    return walk(rep)
-
-def ensure_norma(rep):
-    mappa, DATA = load_norme(), _data()
-    for sec in ("violazioni_critiche", "avvertenze"):
-        for v in (rep.get(sec) or []):
-            if not isinstance(v, dict):
-                continue
-            if str(v.get("norma_violata", "")).strip():
-                continue
-            ks = v.get("norma_key") or []
-            if isinstance(ks, str):
-                ks = [ks]
-            ks = [k for k in ks if k in mappa]
-            if ks:
-                v["norma_violata"] = " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks)
-    return rep
-
-def fix_corpus_date(rep):
-    DATA = _data()
-    def walk(x):
-        if isinstance(x, dict):
-            return {k: walk(v) for k, v in x.items()}
-        if isinstance(x, list):
-            return [walk(v) for v in x]
-        if isinstance(x, str):
-            return re.sub(r"(?i)ultimo aggiornamento (del )?corpus[:\s]*[^\n.]*", "Ultimo aggiornamento corpus: " + DATA, x)
-        return x
-    return walk(rep)
-
-def anchor_pos(rep, text):
-    if not isinstance(text, str):
-        try:
-            text = str(text or "")
-        except Exception:
-            text = ""
-    if not text:
-        return rep
-    lines = [l for l in text.split("\n") if l.strip()]
-    markers = ["n.1", "farmacisti", "effetti collaterali", "sicuro", "bambini", "dott.", "24 ore", "miele", "tosse secca"]
-    def find_pos(t):
-        tl = t.lower()
-        for mk in markers:
-            if mk in tl:
-                for i, l in enumerate(lines):
-                    li = l.lower()
-                    if mk in li:
-                        idx = li.find(mk)
-                        s0 = l.rfind(". ", 0, idx)
-                        e0 = l.find(". ", idx + len(mk))
-                        seg = l[(s0 + 2 if s0 != -1 else 0):(e0 if e0 != -1 else len(l))].strip()
-                        if len(seg) < 8:
-                            seg = l.strip()[:40]
-                        return "Riga " + str(i + 1) + " (" + seg[:60] + ")"
-        return None
-    for key in ("violazioni_critiche", "avvertenze"):
-        for v in (rep.get(key) or []):
-            if isinstance(v, dict):
-                if "intero" in str(v.get("posizione", "")).lower():
-                    continue
-                if "identific" in str(v.get("titolo", "")).lower():
-                    v["posizione"] = "Intero materiale"
-                    continue
-                p = find_pos(str(v.get("titolo", "")) + " " + str(v.get("problema", "")))
-                if p:
-                    v["posizione"] = p
-    return rep
-
-def validate_rep(rep):
-    probs = []
     def scan(x, path):
         if isinstance(x, dict):
             for k, v in x.items():
+                if str(k).startswith("_"):
+                    continue
                 scan(v, path + "." + str(k))
         elif isinstance(x, list):
             for i, v in enumerate(x):
-                scan(v, path + "[" + str(i) + "]")
+                scan(v, "%s[%d]" % (path, i))
         elif isinstance(x, str):
             low = x.lower()
-            if any(mk in low for mk in PROMPT_MARKERS):
-                probs.append(path + ": contiene marcatori di prompt o strutture serializzate")
-    scan(rep, "rep")
-    for sec in ("violazioni_critiche", "avvertenze"):
-        for i, v in enumerate(rep.get(sec) or []):
-            if not isinstance(v, dict):
-                continue
-            for f in ("titolo", "problema", "norma_violata"):
-                if not str(v.get(f, "")).strip():
-                    probs.append(sec + " n." + str(i + 1) + ": campo '" + f + "' vuoto")
-            if not str(v.get("azione_richiesta", "") or v.get("azione", "")).strip():
-                probs.append(sec + " n." + str(i + 1) + ": campo azione vuoto")
-    for i, v in enumerate(rep.get("elementi_mancanti") or []):
-        if len(re.sub(r"[-–•:\s]", "", str(v))) < 6:
-            probs.append("elementi_mancanti n." + str(i + 1) + ": voce vuota")
-    r = str(rep.get("riepilogo_esecutivo") or rep.get("riepilogo") or "")
-    mc = re.search(r"(\d+) violazioni critiche", r)
-    ma = re.search(r"(\d+) avvertenze", r)
-    if mc and int(mc.group(1)) != len(rep.get("violazioni_critiche") or []):
-        probs.append("riepilogo: conteggio critiche diverso dal corpo")
-    if ma and int(ma.group(1)) != len(rep.get("avvertenze") or []):
-        probs.append("riepilogo: conteggio avvertenze diverso dal corpo")
-    return probs
+            if any(m in low for m in PROMPT_MARKERS):
+                p.append("%s: contiene marcatori di prompt" % path)
+            if RE_SERIALIZZATO.search(x):
+                p.append("%s: contiene una struttura serializzata" % path)
+            if RE_CHIAVE_NUDA.search(x):
+                p.append("%s: contiene una chiave interna del corpus (%s)"
+                         % (path, RE_CHIAVE_NUDA.search(x).group(0)))
+            if any(t in low for t in ANALOGIA_TERMS):
+                p.append("%s: contiene un'estensione analogica" % path)
 
-def pipeline(rep, text):
-    rep = normalize_rep(rep)
-    rep = promote_profilo(rep)
-    rep = stabilize_classi(rep)
-    rep = apply_norme(rep)
-    rep = gate_analogia(rep)
-    rep = dedup_mancanti(rep)
-    rep = ensure_pediatrica(rep, text)
-    rep = ensure_testimonianza(rep, text)
-    rep = ensure_profilo(rep, text)
-    rep = ensure_claims(rep, text)
-    rep = ensure_doppia(rep, text)
-    rep = ensure_gusto(rep, text)
-    rep = canone_chiavi(rep)
-    rep = ensure_chiavi(rep)
-    rep = ensure_sicuro_critica(rep, text)
-    rep = demote_doppia(rep)
-    rep = dedup_critici(rep)
-    rep = clean_mancanti(rep)
-    rep = dedup_autorizzazione(rep)
-    rep = fix_notes(rep)
-    rep = fix_counts(rep)
-    rep = ensure_perimetro(rep)
-    rep = clean_azioni(rep)
-    rep = ensure_azioni(rep)
-    rep = enrich_azioni(rep)
-    rep = fix_ident(rep)
-    rep = clean_formule(rep)
-    rep = ensure_norma(rep)
-    rep = fix_corpus_date(rep)
-    rep = anchor_pos(rep, text)
-    rep = fix_punti(rep)
-    return rep, validate_rep(rep)
+    scan({k: v for k, v in rep.items() if k != "rilievi"}, "rep")
 
-def counts(rep):
-    return (len(rep.get("violazioni_critiche") or []), len(rep.get("avvertenze") or []), len(rep.get("elementi_mancanti") or []), len(rep.get("claims_rcp") or []))
+    g = ordina(rep)
+    nome = {CRITICA: "violazione critica", AVVERTENZA: "avvertenza", MANCANTE: "elemento mancante"}
+    for sev, lst in g.items():
+        for i, v in enumerate(lst, 1):
+            eti = "%s n.%d" % (nome[sev], i)
+            scan({f: v.get(f) for f in CAMPI_VISIBILI}, eti)
+            for f in CAMPI_OBBLIGATORI:
+                if not _s(v.get(f)):
+                    p.append("%s: campo '%s' vuoto" % (eti, f))
+            if not v["norma_key"]:
+                p.append("%s: nessuna chiave normativa risolta" % eti)
+            for k in v["norma_key"]:
+                if not corpus.ha(k):
+                    p.append("%s: chiave '%s' assente dal corpus" % (eti, k))
 
-def stamp_keys(s):
-    if s is None:
-        return ""
-    s = str(s)
-    s = re.sub(r"\.(\s*\.)+", ".", s)
-    for k in sorted(EMBED_NORME.keys(), key=len, reverse=True):
-        if k in s:
-            s = s.replace(k, LABEL[k] + " — «" + EMBED_NORME[k] + "»")
-    return s
+    for i, c in enumerate(rep.get("claims_rcp") or [], 1):
+        if not _s(c.get("claim")):
+            p.append("claim RCP n.%d: vuoto" % i)
 
-def make_pdf(md):
-    txt = (md or "").replace("—", "-").replace("·", "-")
-    txt = txt.encode("latin-1", "replace").decode("latin-1")
-    try:
-        from fpdf import FPDF
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        pdf.set_font("Helvetica", size=9)
-        for line in txt.split("\n"):
-            pdf.multi_cell(0, 5, line or " ")
-        return bytes(pdf.output())
-    except Exception:
-        pass
-    try:
-        import io
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import A4
-        buf = io.BytesIO()
-        w, h = A4
-        c = canvas.Canvas(buf, pagesize=A4)
-        c.setFont("Helvetica", 8.5)
-        y = h - 35
-        for line in txt.split("\n"):
-            chunks = [line[i:i+100] for i in range(0, len(line), 100)] or [" "]
-            for ch in chunks:
-                c.drawString(35, y, ch)
-                y -= 11
-                if y < 35:
-                    c.showPage(); c.setFont("Helvetica", 8.5); y = h - 35
-        c.showPage(); c.save()
-        return buf.getvalue()
-    except Exception:
-        return None
+    if not corpus.data_vigenza:
+        p.append("corpus: DATA_VIGENZA non dichiarata, le citazioni non sono opponibili")
 
-def build_azioni(rep):
+    if strict and p:
+        raise ReportNonValido(p)
+    return p
+
+
+# ----------------------------------------------------------------------------
+# PIPELINE
+# ----------------------------------------------------------------------------
+
+def pipeline(rep, testo, corpus=None, strict=True):
+    corpus = corpus or Corpus.load()
+    rep = normalizza(rep)
+    rep = deduplica(rep)
+    rep = classifica(rep)
+    rep = cita_norme(rep, corpus)
+    rep = filtro_analogia(rep)
+    rep = ancora_posizioni(rep, testo)
+    rep = completa_azioni(rep)
+    rep = rimandi_incrociati(rep)
+    rep = pulisci_note(rep)
+    problemi = valida(rep, corpus, strict=strict)
+    return rep, problemi, corpus
+
+
+# ----------------------------------------------------------------------------
+# RENDER
+# ----------------------------------------------------------------------------
+
+def azioni_raccomandate(rep):
+    g = ordina(rep)
     az = ["Sospendere immediatamente la divulgazione del materiale fino al completamento delle azioni correttive."]
-    for i, v in enumerate(rep.get("violazioni_critiche") or [], 1):
-        if isinstance(v, dict):
-            az.append((str(v.get("azione_richiesta", "") or v.get("azione", "")) or "Eliminare/integrare quanto contestato") + " (violazione critica n. " + str(i) + ")")
-    for v in rep.get("elementi_mancanti") or []:
-        s = str(v) if not isinstance(v, dict) else str(v.get("elemento", v.get("titolo", "")))
-        s = s.split(" | ")[0].strip()
-        az.append("Integrare l'elemento obbligatorio mancante: " + s)
-    for i, v in enumerate(rep.get("avvertenze") or [], 1):
-        if isinstance(v, dict):
-            az.append((str(v.get("azione", "")) or "Verificare il punto") + " (avvertenza n. " + str(i) + ")")
-    for v in rep.get("claims_rcp") or []:
-        az.append("Verificare contro RCP il claim: " + (str(v.get("claim", "")) if isinstance(v, dict) else str(v)))
+    for i, v in enumerate(g[CRITICA], 1):
+        az.append("%s (violazione critica n. %d)" % (v["azione"], i))
+    for i, v in enumerate(g[MANCANTE], 1):
+        az.append("%s (elemento mancante n. %d)" % (v["azione"], i))
+    for i, v in enumerate(g[AVVERTENZA], 1):
+        az.append("%s (avvertenza n. %d)" % (v["azione"], i))
+    for c in rep.get("claims_rcp") or []:
+        sez = (" - sezioni %s" % c["sezioni_rcp"]) if c["sezioni_rcp"] else ""
+        az.append("Verificare contro il RCP autorizzato il claim: %s%s" % (c["claim"], sez))
     az.append("Sottoporre il materiale revisionato a validazione umana prima della divulgazione.")
     return az
 
-def report_code(rep, data=None):
-    import hashlib
-    DATA = data or _data()
-    return "NX-FARMA-" + datetime.now().strftime("%Y%m%d-%H%M") + "-" + hashlib.sha256((str(rep) + DATA).encode("utf-8")).hexdigest()[:8].upper()
 
-def render_md(rep, meta):
-    DATA = meta.get("data", _data())
-    c, w, m, r = counts(rep)
+def codice_report(rep, corpus):
+    seme = json.dumps(rep, sort_keys=True, default=str) + corpus.fingerprint()
+    return "NX-FARMA-%s-%s" % (datetime.now().strftime("%Y%m%d-%H%M"),
+                               hashlib.sha256(seme.encode()).hexdigest()[:8].upper())
+
+
+def render_md(rep, corpus, meta=None):
+    meta = meta or {}
+    c, w, m, r = conta(rep)
+    g = ordina(rep)
+    vig = corpus.data_vigenza or "NON DICHIARATA"
     L = []
-    L.append("# REPORT DI COMPLIANCE — Farma Compliance")
-    L.append("Data di riferimento: " + DATA + " · Motore: NEXORA Deep Engine · Build " + BUILD)
-    sd = meta.get("source_desc", "Testo inserito dall'utente")
-    L.append("MATERIALE ANALIZZATO: " + _oneline(" · ".join(sd) if isinstance(sd, list) else sd, "Testo inserito dall'utente"))
-    na = meta.get("not_analyzed", "Nessuna immagine fornita")
-    L.append("NON ANALIZZATO: " + _oneline(" · ".join(na) if isinstance(na, list) else na, "Nessuna immagine fornita"))
-    L.append("STATO DEL CORPUS: D.Lgs 219/2006 (testo vigente); Codice Deontologico Farmindustria; FAQ AIFA D&R ver. 230503 · Ultimo aggiornamento: " + DATA)
-    L.append("STATO COMPLESSIVO: " + _oneline(rep.get("stato"), "CRITICAL_FAIL") + " · Tipo materiale: " + _oneline(rep.get("tipo_materiale"), "SOP/OTC - da confermare"))
-    L.append("CODICE REPORT: " + (meta.get("codice") or report_code(rep, DATA)))
-    L.append("## RIEPILOGO ESECUTIVO")
-    AZ = build_azioni(rep)
-    L.append("Il materiale presenta " + str(c) + " violazioni critiche, " + str(w) + " avvertenze e " + str(m) + " elementi obbligatori mancanti; " + str(r) + " claim richiedono verifica contro RCP. Azioni prioritarie: " + "; ".join(AZ[:3]) + ".")
-    L.append("## VIOLAZIONI CRITICHE")
-    for i, v in enumerate(rep.get("violazioni_critiche") or [], 1):
-        if not isinstance(v, dict):
-            continue
-        L.append("VIOLAZIONE CRITICA " + str(i) + " — " + str(v.get("titolo", "")))
-        L.append("Posizione: " + str(v.get("posizione", "")))
-        L.append("Problema: " + str(v.get("problema", "")))
-        L.append("Norma violata: " + str(v.get("norma_violata", "[RIFERIMENTO DA VERIFICARE]")))
-        L.append("Azione richiesta: " + str(v.get("azione_richiesta", "") or v.get("azione", "")))
-    L.append("## AVVERTENZE")
-    for i, v in enumerate(rep.get("avvertenze") or [], 1):
-        if not isinstance(v, dict):
-            continue
-        L.append("AVVERTENZA " + str(i) + " — " + str(v.get("titolo", "")))
-        L.append("Posizione: " + str(v.get("posizione", "")))
-        L.append("Problema: " + str(v.get("problema", "")))
-        L.append("Norma: " + str(v.get("norma_violata", "")))
-        L.append("Azione: " + str(v.get("azione", "") or v.get("azione_richiesta", "")))
-    PER = ""
-    clean_notes = []
-    for n in (rep.get("note_informative") or []):
-        s = str(n.get("titolo", "") + " " + n.get("testo", "")) if isinstance(n, dict) else str(n)
-        i = s.find("PERIMETRO DELLA VERIFICA")
-        if i != -1:
-            PER = s[i:].strip()
-            s = s[:i].strip()
-        if s:
-            clean_notes.append(s)
-    L.append("## NOTE INFORMATIVE (segnalazioni al revisore, NON costituiscono contestazioni)")
-    for i, s in enumerate(clean_notes, 1):
-        L.append(str(i) + ". " + s)
-    L.append("## ELEMENTI MANCANTI")
-    for v in rep.get("elementi_mancanti") or []:
-        if isinstance(v, dict):
-            s = str(v.get("elemento", "") or v.get("titolo", "")) + ": " + str(v.get("riferimento", "") or v.get("norma", ""))
-        else:
-            s = str(v)
-        L.append("- " + stamp_keys(s))
-    L.append("## CLAIM DA VERIFICARE CONTRO RCP")
-    for v in rep.get("claims_rcp") or []:
-        L.append("- " + (str(v.get("claim", "")) + " — " + str(v.get("status", "")) if isinstance(v, dict) else str(v)))
-    L.append("## AZIONI RACCOMANDATE")
-    for i, a in enumerate(AZ, 1):
-        L.append(str(i) + ". " + str(a))
-    L.append("## NOTA PER IL REVISORE UMANO")
-    L.append(PER or DEFAULT_PER)
-    nota = rep.get("nota_revisore") or rep.get("nota_per_il_revisore") or ""
-    L.append(str(nota) if nota else "Validazione umana richiesta prima dell'uso.")
-    L.append("DISCLAIMER: Report generato automaticamente dal sistema di Compliance QA. Validazione umana richiesta prima dell'uso.")
-    L.append("TESTI NORMATIVI: consultabili su Normattiva (www.normattiva.it) - ricerca: 'Decreto Legislativo 219/2006' - testo vigente al " + DATA + ". NEXORA Deep Engine svolge l'analisi; Normattiva e' la fonte pubblica di verifica del testo di legge. NEXORA non e' affiliata a Normattiva.")
-    s = "\n\n".join(L)
-    import re as _re
-    s = s.replace("...", "§§§")
-    s = _re.sub(r"([a-zà-öø-ÿ])\s*\.\s*\.+", r"\1.", s)
-    s = _re.sub(r"['‘’]\s+", lambda m: m.group(0)[0], s)
-    s = s.replace("§§§", "...")
-    return stamp_keys(s)
 
-def golden_check(rep, ad):
-    c, w, m, r = counts(rep)
-    flat = _norm_txt(str(rep))
-    ct = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)).lower()
-    at = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in (rep.get("avvertenze") or []) if isinstance(v, dict)).lower()
-    comp = "sicur" in ct and "autodiagnosi" not in ct and "autodiagnosi" in at
-    EXP_CRIT = sorted([("art116_c1_a",), ("art117_c1_b", "art117_c1_f"), ("art114_c3_a", "art117_c1_b"), ("art114_c3_a", "art117_c1_b"), ("art117_c1_f",), ("art117_c1_l",), ("art114_c3_a", "art114_c3_b")])
-    EXP_AVV = sorted([("art117_c1_g",), ("art114_c2",), ("art117_c1_i",)])
-    got_crit = sorted(tuple(sorted(v.get("norma_key") or [])) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict))
-    got_avv = sorted(tuple(sorted(v.get("norma_key") or [])) for v in (rep.get("avvertenze") or []) if isinstance(v, dict))
-    comp_art = got_crit == EXP_CRIT and got_avv == EXP_AVV
-    ok = c == 7 and w == 3 and m == 4 and r == 3 and "peranalogia" not in flat and "nonverificato" in flat and comp and comp_art
-    lines = [str(c) + " critiche", str(w) + " avvertenze", str(m) + " mancanti", str(r) + " claim", "atteso 7/3/4/3", "composizione articoli " + ("OK" if comp_art else "KO")]
-    return ok, lines
+    L.append("# REPORT DI COMPLIANCE - Farma Compliance")
+    L.append("Data di emissione: %s | Motore: NEXORA Deep Engine | Build %s"
+             % (datetime.now().strftime("%d/%m/%Y %H:%M"), BUILD))
+    L.append("MATERIALE ANALIZZATO: " + _oneline(meta.get("source_desc"), "Testo inserito dall'utente"))
+    L.append("NON ANALIZZATO: " + _oneline(meta.get("not_analyzed"), "Nessuna immagine fornita"))
+    L.append("STATO DEL CORPUS: %s; Codice Deontologico Farmindustria; FAQ AIFA D&R ver. 230503 "
+             "| Testi vigenti al: %s | Origine: %s | Impronta: %s"
+             % (FONTE, vig, corpus.origine, corpus.fingerprint()))
+    if corpus.warnings:
+        L.append("AVVISI SUL CORPUS: " + " ".join(corpus.warnings))
+    L.append("STATO COMPLESSIVO: %s | Tipo materiale: %s"
+             % (_oneline(rep.get("stato"), "CRITICAL_FAIL" if c else "NO_FINDINGS"),
+                _oneline(rep.get("tipo_materiale"), "da confermare")))
+    L.append("CODICE REPORT: " + (meta.get("codice") or codice_report(rep, corpus)))
+
+    L.append("## RIEPILOGO ESECUTIVO")
+    L.append("Rilievi: %d violazioni critiche, %d avvertenze, %d elementi obbligatori mancanti; "
+             "%d claim richiedono verifica contro il RCP." % (c, w, m, r))
+    if g[CRITICA]:
+        L.append("Azioni prioritarie: 1) sospendere immediatamente la divulgazione; "
+                 "2) " + g[CRITICA][0]["azione"].rstrip(".").lower() + "; "
+                 "3) integrare gli elementi obbligatori mancanti.")
+
+    def blocco(v, etichetta, campo_norma):
+        L.append("%s - %s" % (etichetta, v["titolo"]))
+        L.append("Posizione: " + v["posizione"])
+        if v.get("quote"):
+            L.append("Testo contestato: \u00ab%s\u00bb" % v["quote"])
+        L.append("Problema: " + v["problema"])
+        L.append(campo_norma + ": " + v["norma_violata"])
+        L.append("Azione richiesta: " + v["azione"])
+
+    if g[CRITICA]:
+        L.append("## VIOLAZIONI CRITICHE")
+        for i, v in enumerate(g[CRITICA], 1):
+            blocco(v, "VIOLAZIONE CRITICA %d" % i, "Norma violata")
+    if g[AVVERTENZA]:
+        L.append("## AVVERTENZE")
+        for i, v in enumerate(g[AVVERTENZA], 1):
+            blocco(v, "AVVERTENZA %d" % i, "Norma di riferimento")
+    if g[MANCANTE]:
+        L.append("## ELEMENTI OBBLIGATORI MANCANTI")
+        for i, v in enumerate(g[MANCANTE], 1):
+            L.append("ELEMENTO MANCANTE %d - %s" % (i, v["titolo"]))
+            L.append("Norma: " + v["norma_violata"])
+            L.append("Azione richiesta: " + v["azione"])
+
+    if rep.get("claims_rcp"):
+        L.append("## CLAIM DA VERIFICARE CONTRO RCP")
+        for c_ in rep["claims_rcp"]:
+            sez = (" - verificare sezioni %s" % c_["sezioni_rcp"]) if c_["sezioni_rcp"] else ""
+            L.append("- \u00ab%s\u00bb - %s%s" % (c_["claim"], c_["status"], sez))
+
+    if rep.get("note_informative"):
+        L.append("## NOTE INFORMATIVE (segnalazioni al revisore, NON costituiscono contestazioni)")
+        for i, s in enumerate(rep["note_informative"], 1):
+            L.append("%d. %s" % (i, s))
+
+    L.append("## AZIONI RACCOMANDATE")
+    for i, a in enumerate(azioni_raccomandate(rep), 1):
+        L.append("%d. %s" % (i, a))
+
+    L.append("## NOTA PER IL REVISORE UMANO")
+    nv = ["conformita' al RCP del prodotto (documento non presente nella knowledge base)",
+          "layout grafico, enfasi visiva, immagini e dimensioni dei caratteri",
+          "canale di diffusione previsto",
+          "identita' e consenso dei soggetti eventualmente citati nel materiale"]
+    non_anc = [v["titolo"] for v in rep["rilievi"] if v.get("_pos_non_ancorata")]
+    if non_anc:
+        nv.append("posizione esatta di: " + "; ".join(non_anc[:5]))
+    L.append("PERIMETRO DELLA VERIFICA - VERIFICATO: presenza degli elementi obbligatori ex art. 116; "
+             "divieti di contenuto ex art. 117 c.1; principi di presentazione ex art. 114 c.3; "
+             "obbligo di autorizzazione ex art. 118. NON VERIFICATO (richiede verifica umana): "
+             + "; ".join(nv) + ".")
+    L.append("Le decisioni finali sulla conformita' del materiale e sulle azioni correttive restano "
+             "di competenza esclusiva del Responsabile del Servizio Scientifico. Validazione umana "
+             "richiesta prima dell'uso.")
+    L.append("DISCLAIMER: Report generato automaticamente dal sistema di Compliance QA.")
+    L.append("TESTI NORMATIVI: consultabili su Normattiva (www.normattiva.it) - ricerca "
+             "'Decreto Legislativo 219/2006', testo vigente al %s. NEXORA Deep Engine svolge "
+             "l'analisi; Normattiva e' la fonte pubblica di verifica del testo di legge. "
+             "NEXORA non e' affiliata a Normattiva." % vig)
+
+    return pulisci_md("\n\n".join(L))
+
+
+def pulisci_md(s):
+    s = s.replace("...", "\x00")
+    s = re.sub(r"\.(\s*\.)+", ".", s)
+    s = s.replace("\x00", "...")
+    return s
+
+
+def make_pdf(md):
+    """UTF-8 vero: niente encode latin-1, niente spezzatura a meta' parola."""
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return None
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.add_page()
+    font = "Helvetica"
+    for path, name in (("DejaVuSans.ttf", "DejaVu"), ("fonts/DejaVuSans.ttf", "DejaVu")):
+        try:
+            pdf.add_font(name, "", path)
+            pdf.add_font(name, "B", path)
+            font = name
+            break
+        except Exception:
+            continue
+    for riga in md.split("\n"):
+        if not riga.strip():
+            pdf.ln(3)
+            continue
+        if riga.startswith("# "):
+            pdf.set_font(font, "B", 14)
+            riga = riga[2:]
+        elif riga.startswith("## "):
+            pdf.ln(2)
+            pdf.set_font(font, "B", 10)
+            riga = riga[3:]
+        else:
+            pdf.set_font(font, "", 9)
+        if font == "Helvetica":
+            riga = riga.encode("latin-1", "replace").decode("latin-1")
+        pdf.multi_cell(0, 4.6, riga)      # wrapping a parola, non a 100 caratteri
+    return bytes(pdf.output())

@@ -1,0 +1,122 @@
+{
+  "nome": "tussanplus",
+  "testo": "TUSSANPLUS\u00ae - Sciroppo per tosse secca e grassa\nIl n.1 consigliato dai farmacisti. Completamente privo di effetti collaterali, sicuro anche per bambini sotto i 2 anni.\nConsigliato dal Dott. Mario Rossi, pneumologo.\n\"Con TussanPlus la tosse sparisce in 24 ore\" - sig.ra Bianchi\nDisponibile in farmacia senza ricetta. Formato 200 ml gusto miele.",
+
+  "_nota": "rep_grezzo e' l'output del modello CONGELATO. Nota che il modello sbaglia la severita' su tre rilievi (pediatrico, gusto, doppia indicazione, elementi 116 b): la tabella li riclassifica. E' il punto del test.",
+
+  "rep_grezzo": {
+    "tipo_materiale": "Pubblicita' al pubblico di medicinale SOP/OTC - da confermare",
+    "stato": "CRITICAL_FAIL",
+    "violazioni_critiche": [
+      {
+        "titolo": "Mancata identificazione come medicinale",
+        "problema": "Il materiale non identifica esplicitamente il prodotto come medicinale. La dicitura 'Disponibile in farmacia senza ricetta' non e' sufficiente.",
+        "norma_key": ["art116_c1_a"],
+        "azione": "Inserire una dicitura esplicita che identifichi TUSSANPLUS come medicinale."
+      },
+      {
+        "titolo": "Claim di primato e raccomandazione di categoria professionale",
+        "quote": "Il n.1 consigliato dai farmacisti",
+        "problema": "La frase contiene due violazioni inscindibili: un claim di primato privo di fonte e una raccomandazione attribuita ai farmacisti, che sono operatori sanitari.",
+        "norma_key": ["art117_c1_b", "art117_c1_f"],
+        "azione": "Eliminare integralmente la frase."
+      },
+      {
+        "titolo": "Affermazione di assenza totale di effetti collaterali",
+        "quote": "Completamente privo di effetti collaterali",
+        "problema": "L'affermazione categorica di assenza totale di effetti indesiderati e' vietata e incompatibile con la presentazione obiettiva del profilo beneficio/rischio.",
+        "norma_key": ["art114_c3_a", "art117_c1_b"],
+        "azione": "Eliminare l'affermazione."
+      },
+      {
+        "titolo": "Aggettivo di sicurezza assoluta",
+        "quote": "sicuro anche per bambini sotto i 2 anni",
+        "problema": "L'aggettivo 'sicuro' costituisce affermazione categorica di sicurezza assoluta, vietata indipendentemente dal RCP.",
+        "norma_key": ["art114_c3_a", "art117_c1_b"],
+        "azione": "Eliminare l'aggettivo 'sicuro'."
+      },
+      {
+        "titolo": "Raccomandazione di operatore sanitario identificato",
+        "quote": "Consigliato dal Dott. Mario Rossi, pneumologo",
+        "problema": "Raccomandazione esplicita di un medico specialista identificato per nome e qualifica.",
+        "norma_key": ["art117_c1_f"],
+        "azione": "Eliminare integralmente la frase."
+      },
+      {
+        "titolo": "Testimonianza con attestazione di guarigione",
+        "quote": "Con TussanPlus la tosse sparisce in 24 ore",
+        "problema": "Il virgolettato attribuito alla sig.ra Bianchi costituisce attestazione di esito terapeutico.",
+        "norma_key": ["art117_c1_l"],
+        "azione": "Eliminare integralmente la testimonianza."
+      },
+      {
+        "titolo": "Omissione totale del profilo di rischio",
+        "problema": "Il materiale presenta solo benefici, senza alcuna informazione su controindicazioni, effetti indesiderati o avvertenze.",
+        "norma_key": ["art114_c3_a", "art114_c3_b"],
+        "azione": "Integrare il profilo di rischio in modo bilanciato rispetto ai benefici."
+      },
+      {
+        "titolo": "Claim pediatrico non autorizzato",
+        "quote": "sicuro anche per bambini sotto i 2 anni",
+        "problema": "L'indicazione per la fascia sotto i 2 anni richiede verifica di conformita' al RCP, non presente nella knowledge base.",
+        "norma_key": ["art114_c2"],
+        "dipende_da_rcp": true,
+        "azione": "Se il RCP non autorizza la fascia, eliminare integralmente il claim; se la autorizza, il riferimento puo' restare."
+      },
+      {
+        "titolo": "Enfasi organolettica",
+        "quote": "Formato 200 ml gusto miele",
+        "problema": "La menzione del gusto puo' configurare assimilazione a prodotto alimentare, in funzione del layout grafico complessivo.",
+        "norma_key": ["art117_c1_g"],
+        "azione": "Verificare che il contesto grafico non enfatizzi la palatabilita' fino ad assimilare il medicinale a un alimento."
+      },
+      {
+        "titolo": "Doppia indicazione sintomatologica",
+        "quote": "Sciroppo per tosse secca e grassa",
+        "problema": "La presentazione di due sintomatologie distinte puo' indurre errata autodiagnosi senza consulto medico.",
+        "norma_key": ["art117_c1_i"],
+        "azione": "Verificare contro il RCP se entrambe le indicazioni sono autorizzate; valutare un invito esplicito al consulto medico."
+      }
+    ],
+    "elementi_mancanti": [
+      {"titolo": "Denominazione comune della sostanza attiva", "norma_key": ["art116_c1_b1"]},
+      {"titolo": "Informazioni indispensabili per un uso corretto", "norma_key": ["art116_c1_b2"]},
+      {"titolo": "Invito a leggere le avvertenze nel foglio illustrativo", "norma_key": ["art116_c1_b3"]},
+      {"titolo": "Estremi dell'autorizzazione ministeriale", "norma_key": ["art118_c1"]}
+    ],
+    "claims_rcp": [
+      {"claim": "per tosse secca e grassa", "sezioni_rcp": "4.1"},
+      {"claim": "sicuro anche per bambini sotto i 2 anni", "sezioni_rcp": "4.2, 4.3"},
+      {"claim": "la tosse sparisce in 24 ore", "sezioni_rcp": "5.1, 4.2"}
+    ],
+    "note_informative": [
+      "Il materiale dichiara 'Disponibile in farmacia senza ricetta': la classificazione esatta SOP o OTC richiede consultazione dell'AIC.",
+      "Il materiale non presenta titoli o qualifiche particolari oltre a quelli gia' contestati.",
+      "Il sistema non analizza immagini, colori, dimensioni dei caratteri o posizionamento grafico. Informazione non presente nei documenti caricati. Verifica manuale richiesta."
+    ]
+  },
+
+  "atteso": {
+    "critiche": [
+      ["art116_c1_a"],
+      ["art117_c1_b", "art117_c1_f"],
+      ["art114_c3_a", "art117_c1_b"],
+      ["art114_c3_a", "art117_c1_b"],
+      ["art117_c1_f"],
+      ["art117_c1_l"],
+      ["art114_c3_a", "art114_c3_b"]
+    ],
+    "avvertenze": [
+      ["art114_c2"],
+      ["art117_c1_g"],
+      ["art117_c1_i"]
+    ],
+    "mancanti": [
+      ["art116_c1_b1"],
+      ["art116_c1_b2"],
+      ["art116_c1_b3"],
+      ["art118_c1"]
+    ],
+    "claims_rcp": 3
+  }
+}
