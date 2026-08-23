@@ -782,19 +782,13 @@ def build_pdf(title, sections):
     if os.path.exists("logo.png"):
         try: pdf.image("logo.png", x=140, y=8, w=60)
         except Exception: pass
+    _tl = clean_for_pdf(title).split("\n")
     pdf.set_font("Helvetica", "B", 15)
-    pdf.multi_cell(0, 9, clean_for_pdf(title))
+    pdf.multi_cell(120, 9, _tl[0])
     pdf.set_x(pdf.l_margin)
-    pdf.set_font("Helvetica", "I", 10)
-    pdf.multi_cell(0, 6, "Data di riferimento: " + datetime.now().strftime("%d/%m/%Y %H:%M"))
-    pdf.set_x(pdf.l_margin)
-    try:
-        _mot = str(st.session_state.get("check_result", {}).get("model", "") or "")
-    except Exception:
-        _mot = ""
-    if _mot:
-        pdf.set_font("Helvetica", "I", 10)
-        pdf.multi_cell(0, 6, "Motore: " + _mot)
+    if len(_tl) > 1:
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(120, 5, "\n".join(_tl[1:]))
         pdf.set_x(pdf.l_margin)
     pdf.ln(4)
     for h, b in sections:
@@ -885,7 +879,11 @@ def render_report(cr):
     ok, lines = nexora_core.golden_check(rep, ad)
     if "tussanplus" in ad.lower() and "gusto miele" in ad.lower():
         st.info(("🧪 AUTO-DIFF CASO D'ORO ✅ " if ok else "🧪 AUTO-DIFF CASO D'ORO ❌ SCOSTATO — ") + " · ".join(lines))
-    md = nexora_core.render_md(rep, cr)
+    code = nexora_core.report_code(rep)
+    meta = dict(cr)
+    meta["codice"] = code
+    st.session_state["report_code"] = code
+    md = nexora_core.render_md(rep, meta)
     c, w, mnt, r = nexora_core.counts(rep)
     st.session_state["nx_onepager"] = "SINTESI ESECUTIVA: " + str(c) + " critiche - " + str(w) + " avvertenze - " + str(mnt) + " mancanti - " + str(r) + " claim RCP."
     with st.container(border=True):
@@ -905,7 +903,7 @@ def render_report(cr):
                 st.error("PDF non generato: " + str(e))
         st.rerun()
     if st.session_state.get("pdf_bytes"):
-        st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name="report_compliance.pdf", mime="application/pdf", key="dl_pdf")
+        st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name=(st.session_state.get("report_code") or "report_compliance") + ".pdf", mime="application/pdf", key="dl_pdf")
 
 def clear_check():
     st.session_state.clear_count = st.session_state.get("clear_count", 0) + 1

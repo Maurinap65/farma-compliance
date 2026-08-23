@@ -646,6 +646,11 @@ def build_azioni(rep):
     az.append("Sottoporre il materiale revisionato a validazione umana prima della divulgazione.")
     return az
 
+def report_code(rep, data=None):
+    import hashlib
+    DATA = data or _data()
+    return "NX-FARMA-" + datetime.now().strftime("%Y%m%d-%H%M") + "-" + hashlib.sha256((str(rep) + DATA).encode("utf-8")).hexdigest()[:8].upper()
+
 def render_md(rep, meta):
     DATA = meta.get("data", _data())
     c, w, m, r = counts(rep)
@@ -658,9 +663,7 @@ def render_md(rep, meta):
     L.append("NON ANALIZZATO: " + _oneline(" · ".join(na) if isinstance(na, list) else na, "Nessuna immagine fornita"))
     L.append("STATO DEL CORPUS: D.Lgs 219/2006 (testo vigente); Codice Deontologico Farmindustria; FAQ AIFA D&R ver. 230503 · Ultimo aggiornamento: " + DATA)
     L.append("STATO COMPLESSIVO: " + _oneline(rep.get("stato"), "CRITICAL_FAIL") + " · Tipo materiale: " + _oneline(rep.get("tipo_materiale"), "SOP/OTC - da confermare"))
-    import hashlib
-    _h = hashlib.sha256((str(rep) + DATA).encode("utf-8")).hexdigest()[:8].upper()
-    L.append("CODICE REPORT: NX-FARMA-" + datetime.now().strftime("%Y%m%d-%H%M") + "-" + _h)
+    L.append("CODICE REPORT: " + (meta.get("codice") or report_code(rep, DATA)))
     L.append("## RIEPILOGO ESECUTIVO")
     AZ = build_azioni(rep)
     L.append("Il materiale presenta " + str(c) + " violazioni critiche, " + str(w) + " avvertenze e " + str(m) + " elementi obbligatori mancanti; " + str(r) + " claim richiedono verifica contro RCP. Azioni prioritarie: " + "; ".join(AZ[:3]) + ".")
