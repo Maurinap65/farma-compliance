@@ -1138,7 +1138,7 @@ with tab_check:
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
                 import nexora_core
-                                corpus = nexora_core.Corpus.load(NX_KB)
+                corpus = nexora_core.Corpus.load(NX_KB)
                 if corpus.warnings:
                     st.warning("⚠️ Corpus: " + " ".join(corpus.warnings))
                 try:
@@ -1148,7 +1148,11 @@ with tab_check:
                     st.stop()
                 cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": _user_text()}
                 try:
-                    data = build_pdf("REPORT DI COMPLIANCE - Farma Compliance", report_sections(rep, source_desc, not_analyzed))
+                    _meta = {"source_desc": source_desc, "not_analyzed": not_analyzed}
+                    _md = nexora_core.render_md(rep, corpus, _meta)
+                    data = nexora_core.make_pdf(_md)
+                    if not data:
+                        raise RuntimeError("fpdf2 non disponibile")
                     cr["pdf"] = data
                     cr["fname"] = salva_report(data, "report_compliance")
                     st.write(f"   ✅ PDF salvato: {cr['fname']}")
