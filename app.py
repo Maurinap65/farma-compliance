@@ -891,17 +891,21 @@ def render_report(cr):
     with st.container(border=True):
         st.markdown(md)
     if st.button("🖨️ Genera PDF", key="gen_pdf"):
-        import nexora_core
-        pdf_bytes = nexora_core.make_pdf(md)
-        if pdf_bytes:
-            st.session_state["pdf_bytes"] = pdf_bytes
-            st.success("PDF generato. Clicca 'Scarica PDF' sotto.")
-            st.rerun()
-        else:
-            st.error("PDF non generato: libreria non disponibile")
+        try:
+            parts = md.split("\n## ")
+            title = parts[0].replace("# ", "").strip()
+            sections = []
+            for p in parts[1:]:
+                head, _, body = p.partition("\n")
+                sections.append((head.strip(), body.strip()))
+            st.session_state["pdf_bytes"] = build_pdf(title, sections)
+        except Exception as e:
+            st.session_state["pdf_bytes"] = nexora_core.make_pdf(md)
+            if not st.session_state.get("pdf_bytes"):
+                st.error("PDF non generato: " + str(e))
+        st.rerun()
     if st.session_state.get("pdf_bytes"):
         st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name="report_compliance.pdf", mime="application/pdf", key="dl_pdf")
-        st.caption("PDF pronto per il download")
 
 def clear_check():
     st.session_state.clear_count = st.session_state.get("clear_count", 0) + 1
