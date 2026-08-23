@@ -892,7 +892,10 @@ def render_report(cr):
         st.markdown(md)
     if st.button("🖨️ Genera PDF", key="gen_pdf"):
         try:
-            st.session_state["pdf_bytes"] = build_pdf(md, cr.get("model", ""))
+            res = build_pdf(md, cr.get("model", ""))
+            if isinstance(res, tuple):
+                res = res[0]
+            st.session_state["pdf_bytes"] = res
         except Exception as e:
             st.session_state["pdf_bytes"] = None
             st.error("PDF non generato: " + str(e))
