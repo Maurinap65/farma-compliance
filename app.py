@@ -2,6 +2,7 @@ import os, re, glob, base64, json, time
 from datetime import datetime
 import requests
 import streamlit as st
+st.markdown("<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;} .stDeployButton {display: none;}</style>", unsafe_allow_html=True)
 import streamlit.components.v1 as components
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
@@ -889,11 +890,14 @@ def render_report(cr):
     st.session_state["nx_onepager"] = "SINTESI ESECUTIVA: " + str(c) + " critiche - " + str(w) + " avvertenze - " + str(mnt) + " mancanti - " + str(r) + " claim RCP."
     with st.container(border=True):
         st.markdown(md)
-    try:
-        pdf = build_pdf(md + "\n\n" + NORM_FOOTER, cr.get("model", ""))
-        st.download_button("🖨️ Scarica PDF", pdf, file_name="report_compliance.pdf", mime="application/pdf", key="dl_pdf")
-    except Exception as e:
-        st.error("PDF non generato: " + str(e))
+    if st.button("🖨️ Genera PDF", key="gen_pdf"):
+        try:
+            st.session_state["pdf_bytes"] = build_pdf(md, cr.get("model", ""))
+        except Exception as e:
+            st.session_state["pdf_bytes"] = None
+            st.error("PDF non generato: " + str(e))
+    if st.session_state.get("pdf_bytes"):
+        st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name="report_compliance.pdf", mime="application/pdf", key="dl_pdf")
 
 def clear_check():
     st.session_state.clear_count = st.session_state.get("clear_count", 0) + 1
@@ -1257,4 +1261,3 @@ if _cr3 and _cr3.get("created") and (time.time() - _cr3["created"]) < 15:
 
 if st.session_state.get("check_result"):
     scroll_to_report("farma-report")
-
