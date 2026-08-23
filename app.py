@@ -125,7 +125,9 @@ REGOLE DI CORREZIONE (LIVELLO AUDITOR - VINCOLANTI):
 21. CHIAVI NORMA (OBBLIGATORIO): per ogni rilievo indica nel JSON il campo "norma_key" con una o piu' chiavi prese SOLO da questo elenco: art113_c1_a, art114_c2, art114_c3_a, art114_c3_b, art116_c1_a, art116_c1_b1, art116_c1_b2, art116_c1_b3, art117_c1_a, art117_c1_b, art117_c1_f, art117_c1_g, art117_c1_i, art117_c1_l, art118_c1, art118_c8. NON scrivere il testo della norma: il sistema lo stampa dal corpus ufficiale associato alla chiave. Se nessuna chiave corrisponde usa "norma_key": ["da_verificare"].
 
 22. SUSSUNZIONE: (a) l'aggettivo di sicurezza assoluta ("sicuro") ha come chiave primaria art114_c3_a (presentazione obiettiva), in combinato con art117_c1_b; (b) se la stessa frase genera due rilievi (aggettivo e fascia di eta'), inserisci in entrambi un rimando esplicito all'altro; (c) conformita' al RCP (art114_c2) e rischio di errata autodiagnosi (art117_c1_i) sono verifiche distinte: non fonderle in un solo rilievo o azione; (d) NON inserire affermazioni di conoscenza generale non derivate dal corpus; (e) ogni azione raccomandata deve richiamare il rilievo corrispondente; (f) le note informative non duplicano rilievi gia' presenti; (g) l'omissione del profilo di rischio e' rilievo autonomo ex art114_c3_a, non solo azione.
-23. VERSIONAMENTO CORPUS: nella nota finale elenca i documenti ESATTAMENTE come "D.Lgs 219/2006 (testo vigente); Codice Deontologico Farmindustria; FAQ AIFA D&R ver. 230503" e chiudi con "Ultimo aggiornamento corpus:" seguito dalla data corrente fornita dal sistema."""
+23. VERSIONAMENTO CORPUS: nella nota finale elenca i documenti ESATTAMENTE come "D.Lgs 219/2006 (testo vigente); Codice Deontologico Farmindustria; FAQ AIFA D&R ver. 230503" e chiudi con "Ultimo aggiornamento corpus:" seguito dalla data corrente fornita dal sistema.
+
+24. CONTENUTO MINIMO (LIVELLO 07:45, VINCOLANTE): (a) "Il n.1 consigliato dai farmacisti" = doppia contestazione art117_c1_b + art117_c1_f; (b) la mancata identificazione come medicinale e' VIOLAZIONE CRITICA ex art116_c1_a e resta anche fra gli elementi mancanti; (c) "tosse secca e grassa" = avvertenza art117_c1_i E claim da verificare contro RCP; (d) "sicuro" e "privo di effetti collaterali" sono due rilievi separati; (e) l'omissione del profilo di rischio e' violazione critica art114_c3_a; (f) sui divieti assoluti l'azione e' sempre ELIMINARE, mai correggere; (g) per il gusto: valutare se il contesto grafico configuri assimilazione a prodotto alimentare; (h) posizioni precise: prima/seconda/terza/quarta riga o frase esatta, mai "Testo"; (i) ogni rilievo ha la sua azione e le azioni coprono anche gli elementi mancanti; (j) il riepilogo dichiara conteggi numerici; (k) la nota finale contiene sempre il perimetro VERIFICATO / NON VERIFICATO; (l) non chiamare mai "immagine" un testo."""
 
 def source_label(r):
     doc = DOC_NAMES.get(r.get('source_doc', ''), r.get('source_doc', 'sconosciuto'))
@@ -178,12 +180,16 @@ def scroll_to_report(target_id):
     html = "<script>setTimeout(function(){var d=window.parent.document;var el=d.getElementById('" + target_id + "');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}},600);</script>"
     components.html(html, height=0, width=0)
 
+EMBED_NORME = {"art113_c1_a":"per pubblicita' di medicinali: qualsiasi forma di informazione, di ricerca di mercato e di incentivazione alla prescrizione, alla fornitura, alla vendita o al consumo di medicinali;", "art114_c2":"La pubblicita' di un medicinale e' conforme al riassunto delle caratteristiche del prodotto.", "art114_c3_a":"La pubblicita' di un medicinale deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprieta'.", "art114_c3_b":"La pubblicita' di un medicinale non puo' essere ingannevole.", "art116_c1_a":"La pubblicita' di un medicinale presso il pubblico e' realizzata in modo che la natura pubblicitaria del messaggio e' evidente e il prodotto e' chiaramente identificato come medicinale.", "art116_c1_b1":"la denominazione del medicinale e la denominazione comune della sostanza attiva;", "art116_c1_b2":"le informazioni indispensabili per un uso corretto del medicinale;", "art116_c1_b3":"un invito esplicito e chiaro a leggere attentamente le avvertenze figuranti, a seconda dei casi, nel foglio illustrativo o sull'imballaggio esterno.", "art117_c1_a":"induca a ritenere che la visita medica o l'intervento chirurgico siano superflui, in particolare offrendo una diagnosi o suggerendo un trattamento per corrispondenza;", "art117_c1_b":"induca a ritenere che gli effetti derivanti dall'assunzione del medicinale siano garantiti, non siano accompagnati da reazioni avverse o siano superiori o pari a quelli di un altro trattamento o medicinale;", "art117_c1_f":"comprenda una raccomandazione di scienziati, di operatori sanitari o di persone largamente note al pubblico;", "art117_c1_g":"assimili il medicinale ad un prodotto alimentare, ad un prodotto cosmetico o ad un altro prodotto di consumo;", "art117_c1_i":"possa indurre ad una errata autodiagnosi;", "art117_c1_l":"faccia riferimento, in termini impropri, allarmistici o ingannevoli, ad attestati di guarigione;", "art118_c1":"Nessuna pubblicita' di medicinali presso il pubblico puo' essere effettuata senza autorizzazione del Ministero della salute.", "art118_c8":"Decorsi quarantacinque giorni dalla presentazione della domanda senza osservazioni del Ministero della salute, la pubblicita' si intende autorizzata."}
 def load_norme_chiavi():
-    m = {}
+    m = dict(EMBED_NORME)
     try:
         t = open("kb/pharma_norme_chiavi.txt", encoding="utf-8", errors="replace").read()
+        for k, v in re.findall(r"\[KEY ([a-zA-Z0-9_]+)\]\n([^[]+)", t):
+            m[k] = v.strip()
     except Exception:
-        return m
+        pass
+    return m
     for k, v in re.findall(r"\[KEY ([a-zA-Z0-9_]+)\]\n([^[]+)", t):
         m[k] = v.strip()
     return m
@@ -447,10 +453,14 @@ def render_report(cr):
                     if isinstance(ks, str):
                         ks = [ks]
                     _keys.update(ks)
-        _exp = {"art117_c1_b","art117_c1_f","art117_c1_g","art117_c1_l","art114_c3_a","art116_c1_a","art116_c1_b1","art116_c1_b2","art116_c1_b3","art118_c1"}
-        st.write(f"**Diff caso d'oro** — Atteso: 7 critiche / 3 avvertenze / 5 mancanti / 3 RCP · Ottenuto: {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
+        _exp = {"art117_c1_b","art117_c1_f","art117_c1_l","art117_c1_g","art117_c1_i","art114_c2","art114_c3_a","art116_c1_a","art116_c1_b1","art116_c1_b2","art116_c1_b3","art118_c1"}
         _mk = _exp - _keys
+        _ok = len(_c) == 7 and len(_w) == 3 and len(_m) == 5 and len(_r) == 3 and not _mk
+        st.write(("✅ DIFF OK" if _ok else "❌ DIFF SCOSTATO") + f" — Atteso 7 critiche / 3 avvertenze / 5 mancanti / 3 RCP · Ottenuto {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
         st.write("Chiavi norme mancanti: " + (", ".join(sorted(_mk)) if _mk else "nessuna"))
+        _md = (cr.get("md") or "").lower()
+        for nome, ok in [("doppia contestazione farmacisti (lett. f)", "lett. f" in _md), ("posizioni precise (riga)", "riga" in _md), ("perimetro VERIFICATO/NON VERIFICATO", "non verificato" in _md), ("invito al medico non sana", "non sana" in _md or "non è sanante" in _md), ("conteggi numerici nel riepilogo", "critiche" in _md)]:
+            st.write(("✅ " if ok else "❌ ") + nome)
     st.markdown("## Riepilogo Esecutivo")
     st.write(rep.get("riepilogo_esecutivo", ""))
     st.write("**Analizzato:** " + ("; ".join(cr["source_desc"]) or "-"))
