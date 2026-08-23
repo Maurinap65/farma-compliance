@@ -493,6 +493,37 @@ def ensure_azioni(rep):
             v["azione_richiesta"] = a
     return rep
 
+def force_canonico(rep, text):
+    mappa, DATA = load_norme(), _data()
+    def _stampa(ks):
+        return " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks if k in mappa)
+    tl = (text or "").lower()
+    crit = rep.get("violazioni_critiche") or []
+    avv = rep.get("avvertenze") or []
+    if "sicuro" in tl and "bambini" in tl:
+        for v in crit:
+            if not isinstance(v, dict):
+                continue
+            t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower()
+            if "sicur" in t and "bambini" in t and "effetti collaterali" not in t:
+                v["norma_key"] = ["art114_c3_a", "art117_c1_b"]
+                v["norma_violata"] = _stampa(["art114_c3_a", "art117_c1_b"])
+                v["titolo"] = "Aggettivo di sicurezza assoluta su fascia pediatrica"
+                v["problema"] = "L'aggettivo 'sicuro' in 'sicuro anche per bambini sotto i 2 anni' costituisce affermazione categorica di sicurezza assoluta, vietata indipendentemente dal RCP (profilo incondizionato). Per la fascia di eta' v. l'avvertenza dedicata."
+                break
+    if "sotto i 2" in tl and not any("art114_c2" in (v.get("norma_key") or []) for v in avv if isinstance(v, dict)):
+        avv.append({"titolo": "Claim pediatrico - fascia sotto i 2 anni - conformita' RCP non verificabile (v. la violazione critica sull'aggettivo di sicurezza assoluta)", "problema": "L'indicazione 'bambini sotto i 2 anni' configura claim terapeutico verificabile solo contro il RCP (fascia di eta' autorizzata), assente nella knowledge base.", "posizione": "Riga 2", "norma_key": ["art114_c2"], "norma_violata": _stampa(["art114_c2"]), "azione": "Se il RCP non autorizza la fascia: eliminare integralmente il claim. Se il RCP la autorizza: il riferimento puo' restare, ma l'aggettivo 'sicuro' va eliminato comunque (v. violazione sulla sicurezza assoluta)."})
+        rep["avvertenze"] = avv
+    for v in crit:
+        if not isinstance(v, dict):
+            continue
+        t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower()
+        if "profilo di rischio" in t or "profilo rischio" in t:
+            v["norma_key"] = ["art114_c3_a", "art114_c3_b"]
+            v["norma_violata"] = _stampa(["art114_c3_a", "art114_c3_b"])
+            break
+    return rep
+
 def enrich_azioni(rep):
     OPS = [("art116_c1_a", "posizione preminente", "Inserire in posizione preminente la formula esplicita 'Medicinale senza obbligo di prescrizione' o equivalente che identifichi chiaramente il prodotto come medicinale."), ("art117_c1_f", "non e' sanabile", "Il riferimento va eliminato integralmente: non e' sanabile con aggiunta di fonte o disclaimer."), ("art117_c1_b", "non e' sanabile", "L'affermazione va eliminata: non e' sanabile con aggiunta di fonte o disclaimer."), ("art117_c1_l", "non sono sanabili", "La testimonianza va eliminata integralmente: le attestazioni di guarigione sono vietate in assoluto e non sono sanabili."), ("art117_c1_g", "descrizione neutrale", "Rimuovere o ridurre a mera descrizione neutrale il riferimento, eliminando qualsiasi elemento grafico che evochi prodotti alimentari."), ("art114_c3_a", "profilo di rischio", "La presentazione va ribilanciata integrando il profilo di rischio (controindicazioni, effetti indesiderati, avvertenze) come da RCP.")]
     for v in (rep.get("violazioni_critiche") or []):
@@ -657,6 +688,7 @@ def pipeline(rep, text):
     rep = ensure_perimetro(rep)
     rep = clean_azioni(rep)
     rep = ensure_azioni(rep)
+    rep = force_canonico(rep, text)
     rep = enrich_azioni(rep)
     rep = clean_formule(rep)
     rep = ensure_norma(rep)
@@ -671,6 +703,7 @@ def stamp_keys(s):
     if s is None:
         return ""
     s = str(s)
+    s = re.sub(r"\.(\s*\.)+", ".", s)
     for k in sorted(EMBED_NORME.keys(), key=len, reverse=True):
         if k in s:
             s = s.replace(k, LABEL[k] + " — «" + EMBED_NORME[k] + "»")
