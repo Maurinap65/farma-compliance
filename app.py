@@ -122,7 +122,10 @@ REGOLE DI CORREZIONE (LIVELLO AUDITOR - VINCOLANTI):
 15. PROFILO DI RISCHIO: l'omissione del profilo di rischio e' violazione dell'art. 114 c.3 (presentazione obiettiva) e va tra violazioni o avvertenze, NON tra gli elementi mancanti ex art. 116.
 16. METADATI UNIVOCI: non stampare nella nota finale nomi o date del corpus diversi da quelli forniti dal sistema nell'intestazione; se la data di aggiornamento non e' nota, ometterla.
 
-21. CHIAVI NORMA (OBBLIGATORIO): per ogni rilievo indica nel JSON il campo "norma_key" con una o piu' chiavi prese SOLO da questo elenco: art113_c1_a, art114_c2, art114_c3_a, art114_c3_b, art116_c1_a, art116_c1_b1, art116_c1_b2, art116_c1_b3, art117_c1_a, art117_c1_b, art117_c1_f, art117_c1_g, art117_c1_i, art117_c1_l, art118_c1, art118_c8. NON scrivere il testo della norma: il sistema lo stampa dal corpus ufficiale associato alla chiave. Se nessuna chiave corrisponde usa "norma_key": ["da_verificare"]."""
+21. CHIAVI NORMA (OBBLIGATORIO): per ogni rilievo indica nel JSON il campo "norma_key" con una o piu' chiavi prese SOLO da questo elenco: art113_c1_a, art114_c2, art114_c3_a, art114_c3_b, art116_c1_a, art116_c1_b1, art116_c1_b2, art116_c1_b3, art117_c1_a, art117_c1_b, art117_c1_f, art117_c1_g, art117_c1_i, art117_c1_l, art118_c1, art118_c8. NON scrivere il testo della norma: il sistema lo stampa dal corpus ufficiale associato alla chiave. Se nessuna chiave corrisponde usa "norma_key": ["da_verificare"].
+
+22. SUSSUNZIONE: (a) l'aggettivo di sicurezza assoluta ("sicuro") ha come chiave primaria art114_c3_a (presentazione obiettiva), in combinato con art117_c1_b; (b) se la stessa frase genera due rilievi (aggettivo e fascia di eta'), inserisci in entrambi un rimando esplicito all'altro; (c) conformita' al RCP (art114_c2) e rischio di errata autodiagnosi (art117_c1_i) sono verifiche distinte: non fonderle in un solo rilievo o azione; (d) NON inserire affermazioni di conoscenza generale non derivate dal corpus; (e) ogni azione raccomandata deve richiamare il rilievo corrispondente; (f) le note informative non duplicano rilievi gia' presenti; (g) l'omissione del profilo di rischio e' rilievo autonomo ex art114_c3_a, non solo azione.
+23. VERSIONAMENTO CORPUS: nella nota finale elenca i documenti ESATTAMENTE come "D.Lgs 219/2006 (testo vigente); Codice Deontologico Farmindustria; FAQ AIFA D&R ver. 230503" e chiudi con "Ultimo aggiornamento corpus:" seguito dalla data corrente fornita dal sistema."""
 
 def source_label(r):
     doc = DOC_NAMES.get(r.get('source_doc', ''), r.get('source_doc', 'sconosciuto'))
@@ -200,6 +203,30 @@ def normalize_rep(rep):
     return rep
 
 def apply_norme_ufficiali(rep, mappa):
+    LABEL = {"art113_c1_a":"Art. 113 c.1 lett. a","art114_c2":"Art. 114 c.2","art114_c3_a":"Art. 114 c.3 lett. a","art114_c3_b":"Art. 114 c.3 lett. b","art116_c1_a":"Art. 116 c.1 lett. a","art116_c1_b1":"Art. 116 c.1 lett. b n.1","art116_c1_b2":"Art. 116 c.1 lett. b n.2","art116_c1_b3":"Art. 116 c.1 lett. b n.3","art117_c1_a":"Art. 117 c.1 lett. a","art117_c1_b":"Art. 117 c.1 lett. b","art117_c1_f":"Art. 117 c.1 lett. f","art117_c1_g":"Art. 117 c.1 lett. g","art117_c1_i":"Art. 117 c.1 lett. i","art117_c1_l":"Art. 117 c.1 lett. l","art118_c1":"Art. 118 c.1","art118_c8":"Art. 118 c.8"}
+    def _resolve(v):
+        ks = v.get("norma_key") or []
+        if isinstance(ks, str):
+            ks = [ks]
+        ks = [k for k in ks if isinstance(k, str)]
+        t = (" ".join(str(v.get(f, "")) for f in ("titolo", "problema", "norma_violata", "issue", "norma"))).lower()
+        for L in re.findall(r"art\.?\s*117\s*c\.?\s*1\s*lett\.?\s*([a-z])", t):
+            ks.append("art117_c1_" + L)
+        if re.search(r"art\.?\s*116.{0,60}lett\.?\s*a", t):
+            ks.append("art116_c1_a")
+        for N in re.findall(r"art\.?\s*116.{0,80}lett\.?\s*b.{0,20}n\.?\s*([123])", t):
+            ks.append("art116_c1_b" + N)
+        if re.search(r"art\.?\s*114.{0,40}c\.?\s*2", t):
+            ks.append("art114_c2")
+        if re.search(r"art\.?\s*114.{0,40}c\.?\s*3", t):
+            ks.append("art114_c3_a")
+        if re.search(r"art\.?\s*118", t):
+            ks.append("art118_c1")
+        out = []
+        for k in ks:
+            if k in mappa and k not in out:
+                out.append(k)
+        return out
     for key in ("violazioni_critiche", "avvertenze", "warnings", "elementi_mancanti"):
         items = rep.get(key)
         if not isinstance(items, list):
@@ -207,14 +234,13 @@ def apply_norme_ufficiali(rep, mappa):
         for v in items:
             if not isinstance(v, dict):
                 continue
-            ks = v.get("norma_key") or []
-            if isinstance(ks, str):
-                ks = [ks]
-            testi = [mappa.get(k) for k in ks if k in mappa]
-            if testi:
-                v["norma_violata"] = " ; ".join(testi)
-            elif key == "violazioni_critiche":
-                v["titolo"] = "[RIFERIMENTO DA VERIFICARE] " + str(v.get("titolo", v.get("issue", "")))
+            ks = _resolve(v)
+            if ks:
+                v["norma_violata"] = " | ".join(LABEL.get(k, k) + ": " + mappa[k] for k in ks)
+                v["norma_key"] = ks
+                v["titolo"] = re.sub(r"^\[(RIFERIMENTO DA VERIFICARE|DA VERIFICARE)[^\]]*\]\s*", "", str(v.get("titolo", "")))
+            else:
+                v["titolo"] = "[RIFERIMENTO DA VERIFICARE] " + re.sub(r"^\[[^\]]*\]\s*", "", str(v.get("titolo", "")))
     return rep
 
 def _norm_txt(t):
@@ -422,7 +448,7 @@ def render_report(cr):
                         ks = [ks]
                     _keys.update(ks)
         _exp = {"art117_c1_b","art117_c1_f","art117_c1_g","art117_c1_l","art114_c3_a","art116_c1_a","art116_c1_b1","art116_c1_b2","art116_c1_b3","art118_c1"}
-        st.write(f"**Diff caso d'oro** — Atteso: 7 critiche / 2 avvertenze / 5 mancanti / 3 RCP · Ottenuto: {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
+        st.write(f"**Diff caso d'oro** — Atteso: 7 critiche / 3 avvertenze / 5 mancanti / 3 RCP · Ottenuto: {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
         _mk = _exp - _keys
         st.write("Chiavi norme mancanti: " + (", ".join(sorted(_mk)) if _mk else "nessuna"))
     st.markdown("## Riepilogo Esecutivo")
