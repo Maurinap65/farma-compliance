@@ -120,7 +120,9 @@ REGOLE DI CORREZIONE (LIVELLO AUDITOR - VINCOLANTI):
 13. TIPO MATERIALE: se il materiale dice solo "senza ricetta" o "in farmacia", classificare come "SOP/OTC - da confermare", mai SOP assertivo.
 14. NOTE NON DUPLICATE: ogni fatto compare in una sola nota; la frase "verifica manuale richiesta" va usata solo dove un'informazione davvero manca; nella pubblicita' di medicinali al pubblico NON citare il direttore sanitario.
 15. PROFILO DI RISCHIO: l'omissione del profilo di rischio e' violazione dell'art. 114 c.3 (presentazione obiettiva) e va tra violazioni o avvertenze, NON tra gli elementi mancanti ex art. 116.
-16. METADATI UNIVOCI: non stampare nella nota finale nomi o date del corpus diversi da quelli forniti dal sistema nell'intestazione; se la data di aggiornamento non e' nota, ometterla."""
+16. METADATI UNIVOCI: non stampare nella nota finale nomi o date del corpus diversi da quelli forniti dal sistema nell'intestazione; se la data di aggiornamento non e' nota, ometterla.
+
+21. CHIAVI NORMA (OBBLIGATORIO): per ogni rilievo indica nel JSON il campo "norma_key" con una o piu' chiavi prese SOLO da questo elenco: art113_c1_a, art114_c2, art114_c3_a, art114_c3_b, art116_c1_a, art116_c1_b1, art116_c1_b2, art116_c1_b3, art117_c1_a, art117_c1_b, art117_c1_f, art117_c1_g, art117_c1_i, art117_c1_l, art118_c1, art118_c8. NON scrivere il testo della norma: il sistema lo stampa dal corpus ufficiale associato alla chiave. Se nessuna chiave corrisponde usa "norma_key": ["da_verificare"]."""
 
 def source_label(r):
     doc = DOC_NAMES.get(r.get('source_doc', ''), r.get('source_doc', 'sconosciuto'))
@@ -172,6 +174,48 @@ def autoscroll(on):
 def scroll_to_report(target_id):
     html = "<script>setTimeout(function(){var d=window.parent.document;var el=d.getElementById('" + target_id + "');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}},600);</script>"
     components.html(html, height=0, width=0)
+
+def load_norme_chiavi():
+    m = {}
+    try:
+        t = open("kb/pharma_norme_chiavi.txt", encoding="utf-8", errors="replace").read()
+    except Exception:
+        return m
+    for k, v in re.findall(r"\[KEY ([a-zA-Z0-9_]+)\]\n([^[]+)", t):
+        m[k] = v.strip()
+    return m
+
+def normalize_rep(rep):
+    viol = rep.get("violazioni_critiche") or []
+    avv = rep.get("avvertenze") or []
+    for v in rep.get("violations") or []:
+        sev = str(v.get("severity", "")).upper() if isinstance(v, dict) else ""
+        (viol if "CRITIC" in sev else avv).append(v)
+    keep = []
+    for v in avv:
+        sev = str(v.get("severity", "")).upper() if isinstance(v, dict) else ""
+        (viol if "CRITIC" in sev else keep).append(v)
+    rep["violazioni_critiche"] = viol
+    rep["avvertenze"] = keep
+    return rep
+
+def apply_norme_ufficiali(rep, mappa):
+    for key in ("violazioni_critiche", "avvertenze", "warnings", "elementi_mancanti"):
+        items = rep.get(key)
+        if not isinstance(items, list):
+            continue
+        for v in items:
+            if not isinstance(v, dict):
+                continue
+            ks = v.get("norma_key") or []
+            if isinstance(ks, str):
+                ks = [ks]
+            testi = [mappa.get(k) for k in ks if k in mappa]
+            if testi:
+                v["norma_violata"] = " ; ".join(testi)
+            elif key == "violazioni_critiche":
+                v["titolo"] = "[RIFERIMENTO DA VERIFICARE] " + str(v.get("titolo", v.get("issue", "")))
+    return rep
 
 def _norm_txt(t):
     return re.sub(r"[^a-z0-9à-öø-ÿ]+", "", (t or "").lower())
@@ -364,6 +408,23 @@ def render_report(cr):
         st.markdown(f"### 📌 SINTESI ESECUTIVA — {len(_crit)} critiche · {len(_avv)} avvertenze · {len(_note)} note")
         for i, s in enumerate(_top3, 1):
             st.write(f"**{i}.** {s}")
+    if st.button("🧪 Diff caso d'oro (TUSSANPLUS)"):
+        _c = rep.get("violazioni_critiche") or []
+        _w = rep.get("avvertenze") or []
+        _m = rep.get("elementi_mancanti") or []
+        _r = rep.get("claims_rcp") or []
+        _keys = set()
+        for lst in (_c, _w, _m):
+            for v in lst:
+                if isinstance(v, dict):
+                    ks = v.get("norma_key") or []
+                    if isinstance(ks, str):
+                        ks = [ks]
+                    _keys.update(ks)
+        _exp = {"art117_c1_b","art117_c1_f","art117_c1_g","art117_c1_l","art114_c3_a","art116_c1_a","art116_c1_b1","art116_c1_b2","art116_c1_b3","art118_c1"}
+        st.write(f"**Diff caso d'oro** — Atteso: 7 critiche / 2 avvertenze / 5 mancanti / 3 RCP · Ottenuto: {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
+        _mk = _exp - _keys
+        st.write("Chiavi norme mancanti: " + (", ".join(sorted(_mk)) if _mk else "nessuna"))
     st.markdown("## Riepilogo Esecutivo")
     st.write(rep.get("riepilogo_esecutivo", ""))
     st.write("**Analizzato:** " + ("; ".join(cr["source_desc"]) or "-"))
@@ -657,7 +718,7 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = gate_citazioni(rep)
+                rep = normalize_rep(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi())
                 rep = gate_severita(rep)
                 cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello}
                 try:
