@@ -875,32 +875,22 @@ def set_topbar(msg):
 def render_report(cr):
     import nexora_core
     rep = cr.get("rep") or {}
-    ad = str(cr.get("ad_text") or "")
-    ok, lines = nexora_core.golden_check(rep, ad)
-    if "tussanplus" in ad.lower() and "gusto miele" in ad.lower():
-        st.info(("🧪 AUTO-DIFF CASO D'ORO ✅ " if ok else "🧪 AUTO-DIFF CASO D'ORO ❌ SCOSTATO — ") + " · ".join(lines))
-    code = nexora_core.report_code(rep)
+    corpus = nexora_core.Corpus.load()
     meta = dict(cr)
+    code = nexora_core.codice_report(rep, corpus)
     meta["codice"] = code
     st.session_state["report_code"] = code
-    md = nexora_core.render_md(rep, meta)
-    c, w, mnt, r = nexora_core.counts(rep)
+    md = nexora_core.render_md(rep, corpus, meta)
+    c, w, mnt, r = nexora_core.conta(rep)
     st.session_state["nx_onepager"] = "SINTESI ESECUTIVA: " + str(c) + " critiche - " + str(w) + " avvertenze - " + str(mnt) + " mancanti - " + str(r) + " claim RCP."
     with st.container(border=True):
         st.markdown(md)
     if st.button("🖨️ Genera PDF", key="gen_pdf"):
-        try:
-            parts = md.split("\n## ")
-            title = parts[0].replace("# ", "").strip()
-            sections = []
-            for p in parts[1:]:
-                head, _, body = p.partition("\n")
-                sections.append((head.strip(), body.strip()))
-            st.session_state["pdf_bytes"] = build_pdf(title, sections)
-        except Exception as e:
-            st.session_state["pdf_bytes"] = nexora_core.make_pdf(md)
-            if not st.session_state.get("pdf_bytes"):
-                st.error("PDF non generato: " + str(e))
+        pdf_bytes = nexora_core.make_pdf(md)
+        if pdf_bytes:
+            st.session_state["pdf_bytes"] = pdf_bytes
+        else:
+            st.error("PDF non generato: libreria non disponibile")
         st.rerun()
     if st.session_state.get("pdf_bytes"):
         st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name=(st.session_state.get("report_code") or "report_compliance") + ".pdf", mime="application/pdf", key="dl_pdf")
@@ -1146,12 +1136,12 @@ with tab_check:
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
                 import nexora_core
-                rep, _probs = nexora_core.pipeline(rep, _user_text())
-                _probs = validate_rep(rep)
-                if _probs:
-                    st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
+                corpus = nexora_core.Corpus.load()
+                try:
+                    rep, _probs, corpus = nexora_core.pipeline(rep, _user_text(), corpus=corpus, strict=True)
+                except nexora_core.ReportNonValido as e:
+                    st.error("🛑 BUILD FALLITA - controlli automatici:\n" + "\n".join(e.problemi))
                     st.stop()
-                rep = gate_severita(rep)
                 cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": _user_text()}
                 try:
                     data = build_pdf("REPORT DI COMPLIANCE - Farma Compliance", report_sections(rep, source_desc, not_analyzed))
