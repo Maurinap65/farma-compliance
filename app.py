@@ -266,6 +266,40 @@ def apply_norme_ufficiali(rep, mappa):
                 v["problema"] = str(v.get("problema", "")) + " (v. anche l'avvertenza sulla conformita' RCP della stessa frase)."
     return rep
 
+ANALOGIA_TERMS = ["per analogia", "in via estensiva", "applicabile in quanto compatibile", "eventuali linee guida"]
+def gate_analogia(rep):
+    notes = rep.get("note_informative")
+    if not isinstance(notes, list):
+        notes = []
+    def _hit(x):
+        t = str(x).lower()
+        return any(p in t for p in ANALOGIA_TERMS)
+    for key in ("violazioni_critiche", "avvertenze", "warnings", "elementi_mancanti"):
+        items = rep.get(key)
+        if not isinstance(items, list):
+            continue
+        keep = []
+        for v in items:
+            if _hit(v):
+                notes.append("[DEGRADATO DAL FILTRO ANALOGIA] " + (str(v.get("titolo", ""))[:200] if isinstance(v, dict) else str(v)[:200]))
+            else:
+                keep.append(v)
+        rep[key] = keep
+    rep["note_informative"] = notes
+    return rep
+
+def fix_corpus_date(rep):
+    DATA = datetime.now().strftime("%d/%m/%Y")
+    def walk(x):
+        if isinstance(x, dict):
+            return {k: walk(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [walk(v) for v in x]
+        if isinstance(x, str):
+            return re.sub(r"Ultimo aggiornamento corpus:[^\n]*", "Ultimo aggiornamento corpus: " + DATA, x)
+        return x
+    return walk(rep)
+
 def _norm_txt(t):
     return re.sub(r"[^a-z0-9à-öø-ÿ]+", "", (t or "").lower())
 
