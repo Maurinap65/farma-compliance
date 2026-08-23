@@ -983,13 +983,13 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, content)
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, (globals().get("content") or globals().get("ad_text") or globals().get("testo") or ""))
                 _probs = validate_rep(rep)
                 if _probs:
                     st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
                     st.stop()
                 rep = gate_severita(rep)
-                cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": content}
+                cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": (globals().get("content") or globals().get("ad_text") or globals().get("testo") or "")}
                 try:
                     data = build_pdf("REPORT DI COMPLIANCE - Farma Compliance", report_sections(rep, source_desc, not_analyzed))
                     cr["pdf"] = data
