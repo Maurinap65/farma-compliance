@@ -1,4 +1,6 @@
 import os, re, glob, base64, json, time
+from pathlib import Path
+NX_KB = str(Path(__file__).parent / "kb" / "pharma_norme_chiavi.txt")
 from datetime import datetime
 import requests
 import streamlit as st
@@ -875,7 +877,7 @@ def set_topbar(msg):
 def render_report(cr):
     import nexora_core
     rep = cr.get("rep") or {}
-    corpus = nexora_core.Corpus.load()
+    corpus = nexora_core.Corpus.load(NX_KB)
     meta = dict(cr)
     code = nexora_core.codice_report(rep, corpus)
     meta["codice"] = code
@@ -1136,7 +1138,9 @@ with tab_check:
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
                 import nexora_core
-                corpus = nexora_core.Corpus.load()
+                                corpus = nexora_core.Corpus.load(NX_KB)
+                if corpus.warnings:
+                    st.warning("⚠️ Corpus: " + " ".join(corpus.warnings))
                 try:
                     rep, _probs, corpus = nexora_core.pipeline(rep, _user_text(), corpus=corpus, strict=True)
                 except nexora_core.ReportNonValido as e:
