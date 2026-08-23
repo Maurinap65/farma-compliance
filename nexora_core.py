@@ -302,6 +302,17 @@ def canone_chiavi(rep):
             v["norma_violata"] = stampa(["art114_c2"])
     return rep
 
+def ensure_gusto(rep, text):
+    tl = (text or "").lower()
+    if not ("gusto" in tl or "miele" in tl):
+        return rep
+    allv = (rep.get("violazioni_critiche") or []) + (rep.get("avvertenze") or [])
+    if any("art117_c1_g" in (v.get("norma_key") or []) or "gusto" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() for v in allv if isinstance(v, dict)):
+        return rep
+    mappa, DATA = load_norme(), _data()
+    rep.setdefault("avvertenze", []).append({"titolo": "Enfasi organolettica - rischio assimilazione ad alimento", "problema": "La menzione del gusto ('gusto miele') puo' configurare enfasi sulla gradevolezza organolettica e assimilazione del medicinale a un prodotto alimentare, specie se accompagnata da layout grafico evocativo.", "posizione": "Quinta riga", "norma_key": ["art117_c1_g"], "norma_violata": "D.Lgs 219/2006, Art. 117 c.1 lett. g - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_g", "") + "»", "azione": "Verificare che il layout grafico non enfatizzi la componente organolettica fino ad assimilare il medicinale a un prodotto alimentare; in caso positivo, ridimensionare o eliminare il riferimento al gusto."})
+    return rep
+
 def ensure_chiavi(rep):
     mappa, DATA = load_norme(), _data()
     for v in (rep.get("violazioni_critiche") or []) + (rep.get("avvertenze") or []):
@@ -633,6 +644,7 @@ def pipeline(rep, text):
     rep = ensure_profilo(rep, text)
     rep = ensure_claims(rep, text)
     rep = ensure_doppia(rep, text)
+    rep = ensure_gusto(rep, text)
     rep = canone_chiavi(rep)
     rep = ensure_chiavi(rep)
     rep = ensure_sicuro_critica(rep, text)
