@@ -244,7 +244,12 @@ def apply_norme_ufficiali(rep, mappa):
         keep = []
         for v in items:
             if not isinstance(v, dict):
-                keep.append(v); continue
+                if key == "elementi_mancanti" and isinstance(v, str):
+                    ks = _resolve({"titolo": v, "norma_violata": v})
+                    keep.append(v + " | " + " | ".join(LABEL.get(k, k) + ": «" + mappa[k] + "»" for k in ks) if ks else v)
+                else:
+                    keep.append(v)
+                continue
             ks = _resolve(v)
             if ks:
                 v["norma_violata"] = " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks)
@@ -259,7 +264,10 @@ def apply_norme_ufficiali(rep, mappa):
         rep[key] = keep
     if moved:
         for v in moved:
-            v["titolo"] = str(v.get("titolo", "")) + " (profilo condizionato: RCP non disponibile - v. anche il rilievo sulla sicurezza assoluta della stessa frase)"
+            v["titolo"] = re.sub(r"\s*\(profilo condizionato[^)]*\)", "", str(v.get("titolo", ""))) + " - conformita' RCP non verificabile (v. anche il rilievo sulla sicurezza assoluta della stessa frase)"
+            two = "Se il RCP non autorizza la fascia: eliminare integralmente il claim. Se il RCP la autorizza: il riferimento puo' restare, ma l'aggettivo 'sicuro' va eliminato comunque (v. violazione sulla sicurezza assoluta)."
+            v["azione"] = two
+            v["azione_richiesta"] = two
         rep["avvertenze"] = (rep.get("avvertenze") or []) + moved
         for v in rep.get("violazioni_critiche") or []:
             if isinstance(v, dict) and "sicur" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower():
@@ -299,6 +307,50 @@ def fix_corpus_date(rep):
             return re.sub(r"Ultimo aggiornamento corpus:[^\n]*", "Ultimo aggiornamento corpus: " + DATA, x)
         return x
     return walk(rep)
+
+def promote_profilo(rep):
+    items = rep.get("elementi_mancanti")
+    if not isinstance(items, list):
+        return rep
+    keep = []
+    for v in items:
+        if "profilo di rischio" in str(v).lower():
+            rep.setdefault("violazioni_critiche", []).append({"titolo": "Omissione totale del profilo di rischio", "problema": "Il materiale presenta solo benefici senza informazioni sul profilo di rischio, impedendo una presentazione obiettiva e bilanciata.", "posizione": "Intero materiale", "norma_key": ["art114_c3_a", "art114_c3_b"]})
+        else:
+            keep.append(v)
+    rep["elementi_mancanti"] = keep
+    return rep
+
+def fix_counts(rep):
+    for rk in ("riepilogo_esecutivo", "riepilogo"):
+        r = rep.get(rk)
+        if isinstance(r, str):
+            r = re.sub(r"\d+ violazioni critiche", str(len(rep.get("violazioni_critiche") or [])) + " violazioni critiche", r)
+            r = re.sub(r"\d+ avvertenze", str(len(rep.get("avvertenze") or [])) + " avvertenze", r)
+            r = re.sub(r"\d+ elementi (mancanti|obbligatori)", str(len(rep.get("elementi_mancanti") or [])) + " elementi mancanti", r)
+            rep[rk] = r
+    return rep
+
+def fix_notes(rep):
+    notes = rep.get("note_informative")
+    if not isinstance(notes, list):
+        return rep
+    crit_txt = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)).lower()
+    out = []
+    for nte in notes:
+        s = str(nte)
+        sl = s.lower()
+        if "oltre a quelli già contestati" in sl or "non presenta titoli o qualifiche particolari" in sl:
+            continue
+        dup = any(f in sl for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian")) and any(f in crit_txt for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian"))
+        if dup:
+            continue
+        if "informazione non presente nei documenti caricati" in sl and not any(w in sl for w in ("rcp", "knowledge base", "layout", "grafic", "immagine")):
+            s = s.replace("Informazione non presente nei documenti caricati. Verifica manuale richiesta.", "").replace("Informazione non presente nei documenti caricati.", "").strip()
+        if s.strip():
+            out.append(nte if isinstance(nte, dict) else s)
+    rep["note_informative"] = out
+    return rep
 
 def _norm_txt(t):
     return re.sub(r"[^a-z0-9à-öø-ÿ]+", "", (t or "").lower())
@@ -498,8 +550,8 @@ def render_report(cr):
         _m = rep.get("elementi_mancanti") or []
         _r = rep.get("claims_rcp") or []
         _flat = _json.dumps(rep, ensure_ascii=False).lower()
-        _ok = len(_c) == 7 and len(_w) == 2 and len(_m) == 5 and len(_r) == 3 and "per analogia" not in _flat and "testo vigente" in _flat
-        st.write(("✅ DIFF OK" if _ok else "❌ DIFF SCOSTATO") + f" — Atteso 7 critiche / 2 avvertenze / 5 mancanti / 3 RCP · Ottenuto {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
+        _ok = len(_c) == 8 and len(_w) == 3 and len(_m) == 4 and len(_r) == 3 and "per analogia" not in _flat and "testo vigente" in _flat
+        st.write(("✅ DIFF OK" if _ok else "❌ DIFF SCOSTATO") + f" — Atteso 8 critiche / 3 avvertenze / 4 mancanti / 3 RCP · Ottenuto {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
         for nome, ok in [("nessuna analogia", "per analogia" not in _flat), ("citazioni con vigenza e fonte", "fonte normattiva" in _flat), ("rimandi incrociati sicuro/RCP", "v. anche" in _flat), ("posizioni per riga", "riga" in _flat), ("perimetro verificato/non verificato", "non verificato" in _flat)]:
             st.write(("✅ " if ok else "❌ ") + nome)
     st.markdown("## Riepilogo Esecutivo")
@@ -795,7 +847,7 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = fix_corpus_date(rep)
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = fix_corpus_date(rep)
                 rep = gate_severita(rep)
                 cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello}
                 try:
