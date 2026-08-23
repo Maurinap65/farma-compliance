@@ -234,24 +234,72 @@ def _keys(v):
     return [k for k in ks if isinstance(k, str) and k in LABEL]
 
 
+_RE_ART = r"\bart(?:icol[oi]|t)?\.?\s*%s\b"
+_RE_LETT = r"lett(?:era|ere)?\.?\s*([a-z])\)?\b"
+
+
+def _lettere(c):
+    """Estrae le lettere citate, incluse le elencazioni: 'lettere b) e f)', 'lett. a e b'.
+    Le lettere non presenti nel corpus vengono scartate a valle."""
+    out = []
+    for m in re.finditer(r"lett(?:era|ere)?\.?", c):
+        finestra = c[m.end():m.end() + 28]
+        finestra = re.split(r"lett(?:era|ere)?\.?", finestra)[0]
+        for L in re.findall(r"(?<![a-z])([a-z])(?![a-z])", finestra):
+            if L not in out:
+                out.append(L)
+    return out
+
+
+def _coda(t, fine, altri, n=140):
+    """Testo che segue un riferimento di articolo, troncato al riferimento successivo."""
+    c = t[fine:fine + n]
+    return re.split("|".join(_RE_ART % a for a in altri), c)[0]
+
+
 def _estrai_chiavi_da_testo(v):
-    """Fallback: deduce le chiavi da riferimenti testuali. NON genera testo di legge."""
-    t = " ".join(_s(v.get(f)) for f in ("titolo", "problema", "norma_violata", "norma", "riferimento")).lower()
+    """
+    Fallback quando il modello non fornisce norma_key: deduce le chiavi da
+    riferimenti testuali. NON genera mai testo di legge, solo etichette.
+    Gestisce elencazioni ("lett. b e lett. f") e riferimenti puntati
+    ("art. 116 c.1 lett. b n.3").
+    """
+    t = " ".join(_s(v.get(f)) for f in
+                 ("norma_key", "titolo", "problema", "norma_violata", "norma", "riferimento")).lower()
     ks = []
-    for L in re.findall(r"art\.?\s*117\s*c\.?\s*1\s*lett\.?\s*([a-z])\b", t):
-        ks.append("art117_c1_" + L)
-    if re.search(r"art\.?\s*116[^.]{0,40}lett\.?\s*a\b", t):
-        ks.append("art116_c1_a")
-    for N in re.findall(r"art\.?\s*116[^.]{0,60}lett\.?\s*b[^.]{0,20}n\.?\s*([123])", t):
-        ks.append("art116_c1_b" + N)
-    if re.search(r"art\.?\s*114\s*c\.?\s*2\b", t):
-        ks.append("art114_c2")
-    if re.search(r"art\.?\s*114\s*c\.?\s*3[^.]{0,20}lett\.?\s*b\b", t):
-        ks.append("art114_c3_b")
-    if re.search(r"art\.?\s*114\s*c\.?\s*3", t):
-        ks.append("art114_c3_a")
-    if re.search(r"art\.?\s*118", t):
+
+    for m in re.finditer(_RE_ART % "117", t):
+        for L in _lettere(_coda(t, m.end(), ["113", "114", "116", "118", "119"])):
+            if ("art117_c1_" + L) in LABEL:
+                ks.append("art117_c1_" + L)
+
+    for m in re.finditer(_RE_ART % "116", t):
+        c = _coda(t, m.end(), ["113", "114", "117", "118", "119"])
+        for N in re.findall(r"lett(?:era|ere)?\.?\s*b\)?[\s.]*(?:n\.?|numero)?\s*([123])\b", c):
+            ks.append("art116_c1_b" + N)
+        if re.search(r"lett(?:era|ere)?\.?\s*a\)?\b", c):
+            ks.append("art116_c1_a")
+
+    for m in re.finditer(_RE_ART % "114", t):
+        c = _coda(t, m.end(), ["113", "116", "117", "118", "119"])
+        if re.search(r"(?:c\.?|comma)\s*2\b", c):
+            ks.append("art114_c2")
+        if re.search(r"(?:c\.?|comma)\s*3\b", c):
+            lett = _lettere(c)
+            if "b" in lett:
+                ks.append("art114_c3_b")
+            if "a" in lett or not lett:
+                ks.append("art114_c3_a")
+
+    for m in re.finditer(_RE_ART % "118", t):
+        c = _coda(t, m.end(), ["113", "114", "116", "117", "119"])
         ks.append("art118_c1")
+        if re.search(r"(?:c\.?|comma)\s*8\b", c):
+            ks.append("art118_c8")
+
+    if re.search(_RE_ART % "113", t):
+        ks.append("art113_c1_a")
+
     out = []
     for k in ks:
         if k in LABEL and k not in out:
@@ -458,6 +506,25 @@ def pulisci(s):
     return s.strip()
 
 
+def degrada_senza_norma(rep):
+    """
+    Nessun rilievo senza norma citabile: se le chiavi non si risolvono,
+    l'elemento scende fra le note informative invece di bloccare la build.
+    E' la stessa regola che il prompt gia' impone al modello.
+    """
+    keep = []
+    for v in rep["rilievi"]:
+        if v["norma_key"]:
+            keep.append(v)
+            continue
+        rep["note_informative"].append(
+            "[SENZA NORMA CITABILE] " + v["titolo"][:180] +
+            " - il rilievo non e' agganciato ad alcuna norma presente nel corpus: "
+            "non costituisce contestazione e richiede valutazione umana.")
+    rep["rilievi"] = keep
+    return rep
+
+
 def filtro_analogia(rep):
     keep = []
     for v in rep["rilievi"]:
@@ -580,6 +647,7 @@ def pipeline(rep, testo, corpus=None, strict=True):
     rep = deduplica(rep)
     rep = classifica(rep)
     rep = cita_norme(rep, corpus)
+    rep = degrada_senza_norma(rep)
     rep = filtro_analogia(rep)
     rep = ancora_posizioni(rep, testo)
     rep = completa_azioni(rep)
