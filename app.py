@@ -452,6 +452,8 @@ def stabilize_classi(rep):
                 v["problema"] = str(v.get("problema") or v.get("testo") or v.get("descrizione") or v.get("titolo") or "")
                 v["azione"] = v.get("azione") or v.get("azione_richiesta") or "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...')."
                 v["azione_richiesta"] = v["azione"]
+                v["norma_key"] = v.get("norma_key") or ["art116_c1_a"]
+                v["titolo"] = v.get("titolo") or "Mancata identificazione esplicita come medicinale"
                 keep_c.append(v)
             else:
                 keep_c.append({"titolo": "Mancata identificazione esplicita come medicinale", "problema": str(v), "posizione": "Intero materiale", "norma_key": ["art116_c1_a"], "azione": "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...').", "azione_richiesta": "Inserire l'identificazione esplicita come medicinale (es. 'TUSSANPLUS, medicinale per...')."})
@@ -591,6 +593,24 @@ def ensure_claims(rep, text):
         add.append("- la tosse sparisce in 24 ore [UNVERIFIABLE_RCP_NOT_IN_KB]")
     if add:
         rep["claims_rcp"] = claims + add
+    return rep
+
+def ensure_norma(rep):
+    mappa = load_norme_chiavi()
+    LABEL = {"art113_c1_a":"Art. 113 c.1 lett. a","art114_c2":"Art. 114 c.2","art114_c3_a":"Art. 114 c.3 lett. a","art114_c3_b":"Art. 114 c.3 lett. b","art116_c1_a":"Art. 116 c.1 lett. a","art116_c1_b1":"Art. 116 c.1 lett. b n.1","art116_c1_b2":"Art. 116 c.1 lett. b n.2","art116_c1_b3":"Art. 116 c.1 lett. b n.3","art117_c1_a":"Art. 117 c.1 lett. a","art117_c1_b":"Art. 117 c.1 lett. b","art117_c1_f":"Art. 117 c.1 lett. f","art117_c1_g":"Art. 117 c.1 lett. g","art117_c1_i":"Art. 117 c.1 lett. i","art117_c1_l":"Art. 117 c.1 lett. l","art118_c1":"Art. 118 c.1","art118_c8":"Art. 118 c.8"}
+    DATA = datetime.now().strftime("%d/%m/%Y")
+    for sec in ("violazioni_critiche", "avvertenze"):
+        for v in (rep.get(sec) or []):
+            if not isinstance(v, dict):
+                continue
+            if str(v.get("norma_violata", "")).strip():
+                continue
+            ks = v.get("norma_key") or []
+            if isinstance(ks, str):
+                ks = [ks]
+            ks = [k for k in ks if k in mappa]
+            if ks:
+                v["norma_violata"] = " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: <<" + mappa[k] + ">>" for k in ks)
     return rep
 
 def clean_mancanti(rep):
@@ -1202,7 +1222,7 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = ensure_sicuro_critica(rep, _user_text()); rep = demote_doppia(rep); rep = dedup_critici(rep); rep = clean_mancanti(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = clean_formule(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = ensure_norma(rep); rep = ensure_sicuro_critica(rep, _user_text()); rep = demote_doppia(rep); rep = dedup_critici(rep); rep = clean_mancanti(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = clean_formule(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
                 _probs = validate_rep(rep)
                 if _probs:
                     st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
