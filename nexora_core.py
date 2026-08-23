@@ -33,10 +33,9 @@ def normalize_rep(rep):
     mm = []
     for v in rep.get("elementi_mancanti") or []:
         if isinstance(v, dict):
-            s = str(v.get("elemento", "") or v.get("titolo", "")) + ": " + str(v.get("riferimento", "") or v.get("norma", ""))
+            mm.append(str(v.get("elemento") or v.get("titolo") or "") + ": " + str(v.get("riferimento") or v.get("norma") or ""))
         else:
-            s = str(v)
-        L.append("- " + stamp_keys(s))
+            mm.append(str(v))
     rep["elementi_mancanti"] = mm
     viol, avv = rep.get("violazioni_critiche") or [], rep.get("avvertenze") or []
     for v in rep.get("violations") or []:
@@ -188,17 +187,21 @@ def dedup_mancanti(rep):
     rep["elementi_mancanti"] = keep
     return rep
 
+def _fascia(v):
+    t = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
+    return "sotto i 2" in t or "bambini" in t or "fascia" in t
+
 def ensure_pediatrica(rep, text):
     avv = rep.get("avvertenze") or []
-    has = any("art114_c2" in (v.get("norma_key") or []) and ("sotto i 2" in (str(v.get("titolo",""))+str(v.get("problema",""))).lower() or "bambini" in (str(v.get("titolo",""))+str(v.get("problema",""))).lower() or "fascia" in (str(v.get("titolo",""))+str(v.get("problema",""))).lower()) for v in avv if isinstance(v, dict))
+    has = any("art114_c2" in (v.get("norma_key") or []) and _fascia(v) for v in avv if isinstance(v, dict))
     claims_txt = " ".join(str(c) for c in (rep.get("claims_rcp") or [])).lower()
     if not has and "sotto i 2" in claims_txt:
         mappa, DATA = load_norme(), _data()
         two = "Se il RCP non autorizza la fascia: eliminare integralmente il claim. Se il RCP la autorizza: il riferimento puo' restare, ma l'aggettivo 'sicuro' va eliminato comunque (v. violazione sulla sicurezza assoluta)."
         avv.append({"titolo": "Claim pediatrico - fascia sotto i 2 anni - conformita' RCP non verificabile (v. la violazione critica sull'aggettivo di sicurezza assoluta)", "problema": "L'indicazione 'bambini sotto i 2 anni' configura claim terapeutico verificabile solo contro il RCP (fascia di eta' autorizzata), assente nella knowledge base.", "posizione": "Seconda riga", "norma_key": ["art114_c2"], "norma_violata": "D.Lgs 219/2006, Art. 114 c.2 - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c2", "") + "»", "azione": two})
         rep["avvertenze"] = avv
-    if any("art114_c2" in (v.get("norma_key") or []) and ("sotto i 2" in (str(v.get("titolo",""))+str(v.get("problema",""))).lower() or "fascia" in (str(v.get("titolo",""))+str(v.get("problema",""))).lower()) for v in (rep.get("avvertenze") or []) if isinstance(v, dict)):
-        rep["avvertenze"] = [v for v in rep["avvertenze"] if not ("24 ore" in (str(v.get("titolo",""))+str(v.get("problema",""))).lower())]
+    if any("art114_c2" in (v.get("norma_key") or []) and _fascia(v) for v in (rep.get("avvertenze") or []) if isinstance(v, dict)):
+        rep["avvertenze"] = [v for v in rep["avvertenze"] if not ("24 ore" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower())]
     for v in (rep.get("violazioni_critiche") or []):
         T = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
         if isinstance(v, dict) and "sicur" in T and ("bambini" in T or "2 anni" in T) and "v. anche" not in str(v.get("problema", "")):
@@ -247,7 +250,7 @@ def ensure_doppia(rep, text):
     if "tosse secca e grassa" not in tl:
         return rep
     allv = (rep.get("violazioni_critiche") or []) + (rep.get("avvertenze") or [])
-    if any("autodiagnosi" in (str(v.get("titolo",""))+str(v.get("problema",""))).lower() or "art117_c1_i" in (v.get("norma_key") or []) for v in allv if isinstance(v, dict)):
+    if any("autodiagnosi" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() or "art117_c1_i" in (v.get("norma_key") or []) for v in allv if isinstance(v, dict)):
         return rep
     mappa, DATA = load_norme(), _data()
     rep.setdefault("avvertenze", []).append({"titolo": "Doppia indicazione sintomatologica - rischio errata autodiagnosi", "problema": "La menzione 'per tosse secca e grassa' presenta due indicazioni sintomatologiche distinte che possono indurre errata autodiagnosi senza consulto medico.", "posizione": "Prima riga", "norma_key": ["art117_c1_i"], "norma_violata": "D.Lgs 219/2006, Art. 117 c.1 lett. i - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_i", "") + "»", "azione": "Verificare contro RCP sez. 4.1 se entrambe le indicazioni sono autorizzate; valutare invito esplicito al consulto medico."})
@@ -295,7 +298,7 @@ def ensure_sicuro_critica(rep, text):
             v["problema"] = "L'indicazione 'bambini sotto i 2 anni' configura claim terapeutico verificabile solo contro il RCP (fascia di eta' autorizzata), assente nella knowledge base. Il profilo dell'aggettivo 'sicuro' e' contestato separatamente come violazione incondizionata."
     for v in crit:
         if isinstance(v, dict):
-            t = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
+            t = _t(v)
             if "sicurezza assoluta" in t or ("effetti collaterali" in t and "bambini" not in t):
                 v["problema"] = re.sub(r"\(v\. anche l'avvertenza sulla conformita'? ?RCP della stessa frase\)", "", str(v.get("problema", "")))
     return rep
@@ -558,9 +561,10 @@ def counts(rep):
     return (len(rep.get("violazioni_critiche") or []), len(rep.get("avvertenze") or []), len(rep.get("elementi_mancanti") or []), len(rep.get("claims_rcp") or []))
 
 def stamp_keys(s):
-    if not isinstance(s, str):
-        s = str(s)
-    for k in EMBED_NORME:
+    if s is None:
+        return ""
+    s = str(s)
+    for k in sorted(EMBED_NORME.keys(), key=len, reverse=True):
         if k in s:
             s = s.replace(k, LABEL[k] + " — «" + EMBED_NORME[k] + "»")
     return s
@@ -594,8 +598,7 @@ def render_md(rep, meta):
     L.append("STATO COMPLESSIVO: " + str(rep.get("stato", "CRITICAL_FAIL")) + " · Tipo materiale: " + str(rep.get("tipo_materiale", "SOP/OTC - da confermare")))
     L.append("## RIEPILOGO ESECUTIVO")
     AZ = build_azioni(rep)
-    top = "; ".join(AZ[:3])
-    L.append("Il materiale presenta " + str(c) + " violazioni critiche, " + str(w) + " avvertenze e " + str(m) + " elementi obbligatori mancanti; " + str(r) + " claim richiedono verifica contro RCP. Azioni prioritarie: " + top + ".")
+    L.append("Il materiale presenta " + str(c) + " violazioni critiche, " + str(w) + " avvertenze e " + str(m) + " elementi obbligatori mancanti; " + str(r) + " claim richiedono verifica contro RCP. Azioni prioritarie: " + "; ".join(AZ[:3]) + ".")
     L.append("## VIOLAZIONI CRITICHE")
     for i, v in enumerate(rep.get("violazioni_critiche") or [], 1):
         if not isinstance(v, dict):
