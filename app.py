@@ -1257,3 +1257,4 @@ if _cr3 and _cr3.get("created") and (time.time() - _cr3["created"]) < 15:
 
 if st.session_state.get("check_result"):
     scroll_to_report("farma-report")
+
