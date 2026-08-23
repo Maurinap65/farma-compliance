@@ -444,6 +444,11 @@ def clean_azioni(rep):
     return walk(rep)
 
 def anchor_pos(rep, text):
+    if not isinstance(text, str):
+        try:
+            text = str(text or "")
+        except Exception:
+            text = ""
     if not text:
         return rep
     lines = [l for l in text.split("\n") if l.strip()]
@@ -663,7 +668,10 @@ def render_report(cr):
     _top3 = []
     for a in _az[:3]:
         _top3.append(a if isinstance(a, str) else (a.get("azione") or a.get("testo") or str(a)))
-    _ad = (cr.get("ad_text") or "").lower()
+    _ad = cr.get("ad_text") or ""
+    if not isinstance(_ad, str):
+        _ad = str(_ad)
+    _ad = _ad.lower()
     if "tussanplus" in _ad and "gusto miele" in _ad:
         _rep = cr.get("rep") or {}
         _c2 = _rep.get("violazioni_critiche") or []
