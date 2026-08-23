@@ -891,14 +891,18 @@ def render_report(cr):
     with st.container(border=True):
         st.markdown(md)
     if st.button("🖨️ Genera PDF", key="gen_pdf"):
+        st.session_state["pdf_bytes"] = None
         try:
             res = build_pdf(md, cr.get("model", ""))
-            if isinstance(res, tuple):
+            if isinstance(res, (tuple, list)):
                 res = res[0]
             st.session_state["pdf_bytes"] = res
         except Exception as e:
-            st.session_state["pdf_bytes"] = None
-            st.error("PDF non generato: " + str(e))
+            st.session_state["pdf_err"] = str(e)
+        if not st.session_state.get("pdf_bytes"):
+            st.session_state["pdf_bytes"] = nexora_core.make_pdf(md)
+        if not st.session_state.get("pdf_bytes"):
+            st.error("PDF non generato: " + str(st.session_state.get("pdf_err", "libreria non disponibile")))
     if st.session_state.get("pdf_bytes"):
         st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name="report_compliance.pdf", mime="application/pdf", key="dl_pdf")
 

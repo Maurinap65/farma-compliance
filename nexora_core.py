@@ -340,6 +340,22 @@ def clean_mancanti(rep):
         rep["elementi_mancanti"] = [v for v in items if len(re.sub(r"[-–•:\s]", "", str(v))) >= 6]
     return rep
 
+def dedup_autorizzazione(rep):
+    items = rep.get("elementi_mancanti") or []
+    keep = []
+    for v in items:
+        t = re.sub(r"[^a-z0-9]", "", str(v).lower())
+        dup = False
+        for k in keep:
+            kt = re.sub(r"[^a-z0-9]", "", str(k).lower())
+            if t and kt and ("autorizzazioneministeriale" in t and "autorizzazioneministeriale" in kt):
+                dup = True
+                break
+        if not dup:
+            keep.append(v)
+    rep["elementi_mancanti"] = keep
+    return rep
+
 def fix_notes(rep):
     notes = rep.get("note_informative")
     if not isinstance(notes, list):
@@ -548,6 +564,7 @@ def pipeline(rep, text):
     rep = demote_doppia(rep)
     rep = dedup_critici(rep)
     rep = clean_mancanti(rep)
+    rep = dedup_autorizzazione(rep)
     rep = fix_notes(rep)
     rep = fix_counts(rep)
     rep = ensure_perimetro(rep)
@@ -570,6 +587,41 @@ def stamp_keys(s):
         if k in s:
             s = s.replace(k, LABEL[k] + " — «" + EMBED_NORME[k] + "»")
     return s
+
+def make_pdf(md):
+    txt = (md or "").replace("—", "-").replace("·", "-")
+    txt = txt.encode("latin-1", "replace").decode("latin-1")
+    try:
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=9)
+        for line in txt.split("\n"):
+            pdf.multi_cell(0, 5, line or " ")
+        return bytes(pdf.output())
+    except Exception:
+        pass
+    try:
+        import io
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        buf = io.BytesIO()
+        w, h = A4
+        c = canvas.Canvas(buf, pagesize=A4)
+        c.setFont("Helvetica", 8.5)
+        y = h - 35
+        for line in txt.split("\n"):
+            chunks = [line[i:i+100] for i in range(0, len(line), 100)] or [" "]
+            for ch in chunks:
+                c.drawString(35, y, ch)
+                y -= 11
+                if y < 35:
+                    c.showPage(); c.setFont("Helvetica", 8.5); y = h - 35
+        c.showPage(); c.save()
+        return buf.getvalue()
+    except Exception:
+        return None
 
 def build_azioni(rep):
     az = ["Sospendere immediatamente la divulgazione del materiale fino al completamento delle azioni correttive."]
@@ -619,9 +671,19 @@ def render_md(rep, meta):
         L.append("Problema: " + str(v.get("problema", "")))
         L.append("Norma: " + str(v.get("norma_violata", "")))
         L.append("Azione: " + str(v.get("azione", "") or v.get("azione_richiesta", "")))
+    PER = ""
+    clean_notes = []
+    for n in (rep.get("note_informative") or []):
+        s = str(n.get("titolo", "") + " " + n.get("testo", "")) if isinstance(n, dict) else str(n)
+        i = s.find("PERIMETRO DELLA VERIFICA")
+        if i != -1:
+            PER = s[i:].strip()
+            s = s[:i].strip()
+        if s:
+            clean_notes.append(s)
     L.append("## NOTE INFORMATIVE (segnalazioni al revisore, NON costituiscono contestazioni)")
-    for i, n in enumerate(rep.get("note_informative") or [], 1):
-        L.append(str(i) + ". " + (str(n.get("titolo", "")) + " " + str(n.get("testo", "")) if isinstance(n, dict) else str(n)))
+    for i, s in enumerate(clean_notes, 1):
+        L.append(str(i) + ". " + s)
     L.append("## ELEMENTI MANCANTI")
     for v in rep.get("elementi_mancanti") or []:
         if isinstance(v, dict):
@@ -636,6 +698,8 @@ def render_md(rep, meta):
     for i, a in enumerate(AZ, 1):
         L.append(str(i) + ". " + str(a))
     L.append("## NOTA PER IL REVISORE UMANO")
+    if PER:
+        L.append(PER)
     nota = rep.get("nota_revisore") or rep.get("nota_per_il_revisore") or ""
     L.append(str(nota) if nota else "Validazione umana richiesta prima dell'uso.")
     L.append("DISCLAIMER: Report generato automaticamente dal sistema di Compliance QA. Validazione umana richiesta prima dell'uso.")
