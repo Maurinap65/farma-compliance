@@ -6,6 +6,7 @@ BUILD = "NX5-20260823a"
 EMBED_NORME = {"art113_c1_a":"per pubblicita' di medicinali: qualsiasi forma di informazione, di ricerca di mercato e di incentivazione alla prescrizione, alla fornitura, alla vendita o al consumo di medicinali;", "art114_c2":"La pubblicita' di un medicinale e' conforme al riassunto delle caratteristiche del prodotto.", "art114_c3_a":"La pubblicita' di un medicinale deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprieta'.", "art114_c3_b":"La pubblicita' di un medicinale non puo' essere ingannevole.", "art116_c1_a":"La pubblicita' di un medicinale presso il pubblico e' realizzata in modo che la natura pubblicitaria del messaggio e' evidente e il prodotto e' chiaramente identificato come medicinale.", "art116_c1_b1":"la denominazione del medicinale e la denominazione comune della sostanza attiva;", "art116_c1_b2":"le informazioni indispensabili per un uso corretto del medicinale;", "art116_c1_b3":"un invito esplicito e chiaro a leggere attentamente le avvertenze figuranti, a seconda dei casi, nel foglio illustrativo o sull'imballaggio esterno.", "art117_c1_a":"induca a ritenere che la visita medica o l'intervento chirurgico siano superflui, in particolare offrendo una diagnosi o suggerendo un trattamento per corrispondenza;", "art117_c1_b":"induca a ritenere che gli effetti derivanti dall'assunzione del medicinale siano garantiti, non siano accompagnati da reazioni avverse o siano superiori o pari a quelli di un altro trattamento o medicinale;", "art117_c1_f":"comprenda una raccomandazione di scienziati, di operatori sanitari o di persone largamente note al pubblico;", "art117_c1_g":"assimili il medicinale ad un prodotto alimentare, ad un prodotto cosmetico o ad un altro prodotto di consumo;", "art117_c1_i":"possa indurre ad una errata autodiagnosi;", "art117_c1_l":"faccia riferimento, in termini impropri, allarmistici o ingannevoli, ad attestati di guarigione;", "art118_c1":"Nessuna pubblicita' di medicinali presso il pubblico puo' essere effettuata senza autorizzazione del Ministero della salute.", "art118_c8":"Decorsi quarantacinque giorni dalla presentazione della domanda senza osservazioni del Ministero della salute, la pubblicita' si intende autorizzata."}
 LABEL = {"art113_c1_a":"Art. 113 c.1 lett. a","art114_c2":"Art. 114 c.2","art114_c3_a":"Art. 114 c.3 lett. a","art114_c3_b":"Art. 114 c.3 lett. b","art116_c1_a":"Art. 116 c.1 lett. a","art116_c1_b1":"Art. 116 c.1 lett. b n.1","art116_c1_b2":"Art. 116 c.1 lett. b n.2","art116_c1_b3":"Art. 116 c.1 lett. b n.3","art117_c1_a":"Art. 117 c.1 lett. a","art117_c1_b":"Art. 117 c.1 lett. b","art117_c1_f":"Art. 117 c.1 lett. f","art117_c1_g":"Art. 117 c.1 lett. g","art117_c1_i":"Art. 117 c.1 lett. i","art117_c1_l":"Art. 117 c.1 lett. l","art118_c1":"Art. 118 c.1","art118_c8":"Art. 118 c.8"}
 PROMPT_MARKERS = ["[{'type'", "'type': 'text'", "sei un senior", "regole fondamentali", "system prompt", "knowledge_chunks", "skill_prompt"]
+DEFAULT_PER = "PERIMETRO DELLA VERIFICA - VERIFICATO: divieti assoluti art. 117 c.1; elementi obbligatori artt. 116 e 118; presentazione obiettiva art. 114 c.3. NON VERIFICATO (richiede verifica umana): conformita' al RCP (assente nella knowledge base); layout grafico e enfasi visiva; canale di diffusione."
 ANALOGIA_TERMS = ["per analogia", "in via estensiva", "applicabile in quanto compatibile", "eventuali linee guida"]
 
 def load_norme():
@@ -20,6 +21,9 @@ def load_norme():
 
 def _data():
     return datetime.now().strftime("%d/%m/%Y")
+
+def _oneline(s, d=""):
+    return str(s or d).replace("\r", " ").split("\n")[0].strip() or d
 
 def _norm_txt(t):
     return re.sub(r"[^a-z0-9à-öø-ÿ]+", "", (t or "").lower())
@@ -645,11 +649,14 @@ def render_md(rep, meta):
     L.append("# REPORT DI COMPLIANCE — Farma Compliance")
     L.append("Data di riferimento: " + DATA + " · Motore: NEXORA Deep Engine · Build " + BUILD)
     sd = meta.get("source_desc", "Testo inserito dall'utente")
-    L.append("MATERIALE ANALIZZATO: " + (" · ".join(sd) if isinstance(sd, list) else str(sd)))
+    L.append("MATERIALE ANALIZZATO: " + _oneline(" · ".join(sd) if isinstance(sd, list) else sd, "Testo inserito dall'utente"))
     na = meta.get("not_analyzed", "Nessuna immagine fornita")
-    L.append("NON ANALIZZATO: " + (" · ".join(na) if isinstance(na, list) else str(na)))
+    L.append("NON ANALIZZATO: " + _oneline(" · ".join(na) if isinstance(na, list) else na, "Nessuna immagine fornita"))
     L.append("STATO DEL CORPUS: D.Lgs 219/2006 (testo vigente); Codice Deontologico Farmindustria; FAQ AIFA D&R ver. 230503 · Ultimo aggiornamento: " + DATA)
-    L.append("STATO COMPLESSIVO: " + str(rep.get("stato", "CRITICAL_FAIL")) + " · Tipo materiale: " + str(rep.get("tipo_materiale", "SOP/OTC - da confermare")))
+    L.append("STATO COMPLESSIVO: " + _oneline(rep.get("stato"), "CRITICAL_FAIL") + " · Tipo materiale: " + _oneline(rep.get("tipo_materiale"), "SOP/OTC - da confermare"))
+    import hashlib
+    _h = hashlib.sha256((str(rep) + DATA).encode("utf-8")).hexdigest()[:8].upper()
+    L.append("CODICE REPORT: NX-FARMA-" + datetime.now().strftime("%Y%m%d-%H%M") + "-" + _h)
     L.append("## RIEPILOGO ESECUTIVO")
     AZ = build_azioni(rep)
     L.append("Il materiale presenta " + str(c) + " violazioni critiche, " + str(w) + " avvertenze e " + str(m) + " elementi obbligatori mancanti; " + str(r) + " claim richiedono verifica contro RCP. Azioni prioritarie: " + "; ".join(AZ[:3]) + ".")
@@ -698,8 +705,7 @@ def render_md(rep, meta):
     for i, a in enumerate(AZ, 1):
         L.append(str(i) + ". " + str(a))
     L.append("## NOTA PER IL REVISORE UMANO")
-    if PER:
-        L.append(PER)
+    L.append(PER or DEFAULT_PER)
     nota = rep.get("nota_revisore") or rep.get("nota_per_il_revisore") or ""
     L.append(str(nota) if nota else "Validazione umana richiesta prima dell'uso.")
     L.append("DISCLAIMER: Report generato automaticamente dal sistema di Compliance QA. Validazione umana richiesta prima dell'uso.")
