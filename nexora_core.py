@@ -275,7 +275,7 @@ def ensure_doppia(rep, text):
 def canone_chiavi(rep):
     mappa, DATA = load_norme(), _data()
     def stampa(ks):
-        return " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: <<" + mappa[k] + ">>" for k in ks if k in mappa)
+        return " | ".join("D.Lgs 219/2006, " + LABEL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks if k in mappa)
     for v in (rep.get("violazioni_critiche") or []):
         if not isinstance(v, dict):
             continue
@@ -568,7 +568,7 @@ def anchor_pos(rep, text):
                         idx = li.find(mk)
                         s0 = l.rfind(". ", 0, idx)
                         e0 = l.find(". ", idx)
-                        seg = l[s0 + 2:e0 if e0 != -1 else len(l)].strip()
+                        seg = l[(s0 + 2 if s0 != -1 else 0):(e0 if e0 != -1 else len(l))].strip()
                         if len(seg) < 8:
                             seg = l.strip()[:40]
                         return "Riga " + str(i + 1) + " (" + seg[:60] + ")"
