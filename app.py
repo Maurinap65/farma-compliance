@@ -586,11 +586,11 @@ def ensure_claims(rep, text):
     txt = " ".join(str(c) for c in claims).lower()
     add = []
     if "tosse secca e grassa" in tl and "secca e grassa" not in txt:
-        add.append("- per tosse secca e grassa [UNVERIFIABLE_RCP_NOT_IN_KB]")
+        add.append({"claim": "per tosse secca e grassa (doppia indicazione sintomatologica)", "status": "UNVERIFIABLE_RCP_NOT_IN_KB - verificare contro RCP sez. 4.1"})
     if "sotto i 2" in tl and "sotto i 2" not in txt:
-        add.append("- anche per bambini sotto i 2 anni [UNVERIFIABLE_RCP_NOT_IN_KB]")
+        add.append({"claim": "anche per bambini sotto i 2 anni (fascia eta' pediatrica)", "status": "UNVERIFIABLE_RCP_NOT_IN_KB - verificare contro RCP sez. 4.2/4.3"})
     if "24 ore" in tl and "24 ore" not in txt:
-        add.append("- la tosse sparisce in 24 ore [UNVERIFIABLE_RCP_NOT_IN_KB]")
+        add.append({"claim": "la tosse sparisce in 24 ore (tempo di azione)", "status": "UNVERIFIABLE_RCP_NOT_IN_KB - verificare contro RCP sez. 5.1"})
     if add:
         rep["claims_rcp"] = claims + add
     return rep
@@ -858,7 +858,10 @@ def report_sections(rep, source_desc, not_analyzed):
         S.append(("ELEMENTI MANCANTI", "\n".join([f"- {x.get('elemento','')}: {x.get('riferimento','')}" for x in em]) if em else "Nessuno rispetto alla knowledge base caricata."))
     cr = rep.get("claims_rcp", [])
     if not (rep.get("stato_complessivo") == "OUT_OF_SCOPE"):
-        S.append(("CLAIM DA VERIFICARE CONTRO RCP", "\n".join([f"- {x.get('claim','')} [{x.get('status','')}]" for x in cr]) if cr else "Nessun claim da verificare contro RCP."))
+        if isinstance(x, dict):
+            st.write(f"- {x.get('claim','')} — *{x.get('status','')}*")
+        else:
+            st.write(str(x))
     az = rep.get("azioni_raccomandate", [])
     if az:
         S.append(("AZIONI RACCOMANDATE", "\n".join([f"{i}. {a}" for i, a in enumerate(az, 1)])))
