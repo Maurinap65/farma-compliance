@@ -878,112 +878,22 @@ def set_topbar(msg):
     components.html(html, height=0, width=0)
 
 def render_report(cr):
-    rep = cr["rep"]
-    stato = rep.get("stato_complessivo", "")
-    badge = {"COMPLIANT": "green", "NEEDS_REVISION": "purple", "CRITICAL_FAIL": "red", "OUT_OF_SCOPE": "red"}.get(stato, "purple")
-    st.markdown('<div id="farma-report"></div>', unsafe_allow_html=True)
-    autoscroll(False)
-    st.markdown("# 📋 Report di Compliance")
-    st.write(f"**Data analisi:** {datetime.now().strftime('%d/%m/%Y')} · **Tipo materiale:** {rep.get('tipo_materiale','')} · **Motore:** {cr.get('model','n.d.')}")
-    st.markdown(f'**Stato complessivo:** <span class="badge {badge}">{stato}</span>', unsafe_allow_html=True)
-    def _lst(*keys):
-        for k in keys:
-            v = rep.get(k)
-            if isinstance(v, list):
-                return v
-        return []
-    _crit = _lst("violazioni_critiche", "violations")
-    _avv = _lst("avvertenze", "warnings")
-    _note = _lst("note_informative", "notes")
-    _az = _lst("azioni_raccomandate", "azioni")
-    _top3 = []
-    for a in _az[:3]:
-        _top3.append(a if isinstance(a, str) else (a.get("azione") or a.get("testo") or str(a)))
-    _ad = cr.get("ad_text") or ""
-    if not isinstance(_ad, str):
-        _ad = str(_ad)
-    _ad = _ad.lower()
-    if "tussanplus" in _ad and "gusto miele" in _ad:
-        _rep = cr.get("rep") or {}
-        _c2 = _rep.get("violazioni_critiche") or []
-        _w2 = _rep.get("avvertenze") or []
-        _m2 = _rep.get("elementi_mancanti") or []
-        _r2 = _rep.get("claims_rcp") or []
-        import json as _json
-        _f2 = _json.dumps(_rep, ensure_ascii=False).lower()
-        _ct = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in _c2 if isinstance(v, dict)).lower()
-        _at = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in _w2 if isinstance(v, dict)).lower()
-        _comp = "sicur" in _ct and "autodiagnosi" not in _ct and "autodiagnosi" in _at
-        _okd = len(_c2) == 7 and len(_w2) == 3 and len(_m2) == 4 and len(_r2) == 3 and "per analogia" not in _f2 and "non verificato" in _f2 and _comp
-        st.info(("🧪 AUTO-DIFF CASO D'ORO ✅ " if _okd else "🧪 AUTO-DIFF CASO D'ORO ❌ SCOSTATO — ") + f"ottenuto {len(_c2)} critiche / {len(_w2)} avvertenze / {len(_m2)} mancanti / {len(_r2)} claim · atteso 7/3/4/3")
-    st.session_state["nx_onepager"] = ("SINTESI ESECUTIVA: " + str(len(_crit)) + " critiche - " + str(len(_avv)) + " avvertenze - " + str(len(_note)) + " note. AZIONI PRIORITARIE: " + " | ".join(_top3))
+    import nexora_core
+    rep = cr.get("rep") or {}
+    ad = str(cr.get("ad_text") or "")
+    ok, lines = nexora_core.golden_check(rep, ad)
+    if "tussanplus" in ad.lower() and "gusto miele" in ad.lower():
+        st.info(("🧪 AUTO-DIFF CASO D'ORO ✅ " if ok else "🧪 AUTO-DIFF CASO D'ORO ❌ SCOSTATO — ") + " · ".join(lines))
+    md = nexora_core.render_md(rep, cr)
+    c, w, mnt, r = nexora_core.counts(rep)
+    st.session_state["nx_onepager"] = "SINTESI ESECUTIVA: " + str(c) + " critiche - " + str(w) + " avvertenze - " + str(mnt) + " mancanti - " + str(r) + " claim RCP."
     with st.container(border=True):
-        st.markdown(f"### 📌 SINTESI ESECUTIVA — {len(_crit)} critiche · {len(_avv)} avvertenze · {len(_note)} note")
-        for i, s in enumerate(_top3, 1):
-            st.write(f"**{i}.** {s}")
-    if st.button("🧪 Diff caso d'oro (TUSSANPLUS)"):
-        import json as _json
-        _c = rep.get("violazioni_critiche") or []
-        _w = rep.get("avvertenze") or []
-        _m = rep.get("elementi_mancanti") or []
-        _r = rep.get("claims_rcp") or []
-        _flat = _json.dumps(rep, ensure_ascii=False).lower()
-        _ok = len(_c) == 7 and len(_w) == 3 and len(_m) == 4 and len(_r) == 3 and "per analogia" not in _flat and "testo vigente" in _flat and "non verificato" in _flat and "art114_c2" in _flat
-        st.write(("✅ DIFF OK" if _ok else "❌ DIFF SCOSTATO") + f" — Atteso 7 critiche / 3 avvertenze / 4 mancanti / 3 RCP · Ottenuto {len(_c)} / {len(_w)} / {len(_m)} / {len(_r)}")
-        for nome, ok in [("nessuna analogia", "per analogia" not in _flat), ("citazioni con vigenza e fonte", "fonte normattiva" in _flat), ("rimandi incrociati sicuro/RCP", "v. anche" in _flat), ("posizioni per riga", "riga" in _flat), ("perimetro verificato/non verificato", "non verificato" in _flat)]:
-            st.write(("✅ " if ok else "❌ ") + nome)
-    st.markdown("## Riepilogo Esecutivo")
-    st.write(rep.get("riepilogo_esecutivo", ""))
-    st.write("**Analizzato:** " + ("; ".join(cr["source_desc"]) or "-"))
-    if cr["not_analyzed"]:
-        st.write("**Non analizzato:** " + "; ".join(cr["not_analyzed"]))
-    if rep.get("esclusioni"):
-        st.markdown("## ⛔ Base dell'esclusione")
-        for i, e in enumerate(rep.get("esclusioni", []), 1):
-            st.markdown(f"**Esclusione {i} — {e.get('titolo','')}**\n- **Rilievo:** {e.get('rilievo','')}\n- **Norma di riferimento:** {e.get('norma','')}\n- **Conseguenza:** {e.get('conseguenza','')}")
-    if rep.get("violazioni_critiche"):
-        st.markdown("## 🔴 Violazioni Critiche")
-        for i, v in enumerate(rep.get("violazioni_critiche", []), 1):
-            st.markdown(f"**Violazione {i}: {v.get('titolo','')}**\n- **Posizione:** {v.get('posizione','')}\n- **Problema:** {v.get('problema','')}\n- **Norma violata:** {v.get('norma_violata','')}\n- **Azione richiesta:** {v.get('azione','')}")
-    elif stato != "OUT_OF_SCOPE":
-        st.markdown("## 🔴 Violazioni Critiche")
-        st.write("Nessuna violazione critica rilevabile.")
-    if rep.get("avvertenze"):
-        st.markdown("## ⚠️ Avvertenze")
-        for i, v in enumerate(rep.get("avvertenze", []), 1):
-            st.markdown(f"**Avvertenza {i}: {v.get('titolo','')}**\n- **Posizione:** {v.get('posizione','')}\n- **Problema:** {v.get('problema','')}\n- **Norma:** {v.get('norma_violata','')}\n- **Azione:** {v.get('azione','')}")
-    if rep.get("note_informative"):
-        st.markdown("## ℹ️ Note Informative")
-        st.caption("Le osservazioni seguenti sono segnalazioni al revisore umano. Non costituiscono contestazioni.")
-        for i, nn in enumerate(rep.get("note_informative", []), 1):
-            st.write(f"{i}. {nn.get('testo','') if isinstance(nn, dict) else nn}")
-    st.markdown("## 📎 Elementi Mancanti")
-    if stato == "OUT_OF_SCOPE":
-        st.write("Non valutabile: il materiale è fuori dall'ambito della knowledge base caricata.")
-    elif rep.get("elementi_mancanti"):
-        for x in rep.get("elementi_mancanti", []):
-            st.write(f"- **{x.get('elemento','')}**: {x.get('riferimento','')}")
-    else:
-        st.write("Nessuno rispetto alla knowledge base caricata.")
-    if stato != "OUT_OF_SCOPE":
-        st.markdown("## 🔍 Claim da Verificare contro RCP")
-        if rep.get("claims_rcp"):
-            for x in rep.get("claims_rcp", []):
-                st.write(f"- {x.get('claim','')} — *{x.get('status','')}*")
-        else:
-            st.write("Nessun claim da verificare contro RCP.")
-    if rep.get("azioni_raccomandate"):
-        st.markdown("## ✅ Azioni Raccomandate")
-        for i, a in enumerate(rep.get("azioni_raccomandate", []), 1):
-            st.write(f"{i}. {a}")
-    st.markdown("## ⚖️ Nota per il Revisore Umano")
-    st.write(rep.get("reviewer_notes", ""))
-    st.caption("Report generato automaticamente dal sistema di Compliance QA. Validazione umana richiesta prima dell'uso.")
-    if cr.get("pdf"):
-        st.markdown('<div id="farma-fine"></div>', unsafe_allow_html=True)
-        st.download_button("💾 Scarica report PDF", data=cr["pdf"],
-                           file_name=cr.get("fname", "report_compliance.pdf"),
-                           mime="application/pdf", type="primary")
+        st.markdown(md)
+    try:
+        pdf = build_pdf(md + "\n\n" + NORM_FOOTER, cr.get("model", ""))
+        st.download_button("🖨️ Scarica PDF", pdf, file_name="report_compliance.pdf", mime="application/pdf", key="dl_pdf")
+    except Exception as e:
+        st.error("PDF non generato: " + str(e))
 
 def clear_check():
     st.session_state.clear_count = st.session_state.get("clear_count", 0) + 1
@@ -1225,7 +1135,8 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = ensure_norma(rep); rep = ensure_sicuro_critica(rep, _user_text()); rep = demote_doppia(rep); rep = dedup_critici(rep); rep = clean_mancanti(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = clean_formule(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
+                import nexora_core
+                rep, _probs = nexora_core.pipeline(rep, _user_text())
                 _probs = validate_rep(rep)
                 if _probs:
                     st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
