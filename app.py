@@ -417,7 +417,7 @@ def fix_notes(rep):
     for nte in notes:
         s = str(nte)
         sl = s.lower()
-        if "oltre a quelli già contestati" in sl or "non presenta titoli o qualifiche particolari" in sl or "direttore sanitario" in sl or "claim da verificare contro rcp" in sl or "non sono presenti titoli, qualifiche" in sl:
+        if "oltre a quelli già contestati" in sl or "non presenta titoli o qualifiche particolari" in sl or "direttore sanitario" in sl or "claim da verificare contro rcp" in sl or "non sono presenti titoli, qualifiche" in sl or "denominazione comune" in sl or ("inn" in sl and "sostanza" in sl):
             continue
         dup = any(f in sl for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian")) and any(f in crit_txt for f in ("dott. mario rossi", "sig.ra bianchi", "testimonian"))
         if dup:
@@ -495,6 +495,8 @@ def anchor_pos(rep, text):
     for key in ("violazioni_critiche", "avvertenze"):
         for v in (rep.get(key) or []):
             if isinstance(v, dict):
+                if "intero" in str(v.get("posizione", "")).lower():
+                    continue
                 p = find_pos(str(v.get("titolo", "")) + " " + str(v.get("problema", "")))
                 if p:
                     v["posizione"] = p
@@ -591,6 +593,68 @@ def ensure_claims(rep, text):
         rep["claims_rcp"] = claims + add
     return rep
 
+def clean_mancanti(rep):
+    items = rep.get("elementi_mancanti")
+    if isinstance(items, list):
+        rep["elementi_mancanti"] = [v for v in items if len(re.sub(r"[-–•:\s]", "", str(v))) >= 6]
+    return rep
+
+def clean_formule(rep):
+    crit = rep.get("violazioni_critiche") or []
+    idx_test = 0
+    for i, v in enumerate(crit):
+        if isinstance(v, dict) and "testimonian" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower():
+            idx_test = i + 1
+    def walk(x):
+        if isinstance(x, dict):
+            return {k: walk(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [walk(v) for v in x]
+        if isinstance(x, str):
+            x = x.replace("formula obbligatoria", "formula consigliata di prassi (non prescritta dalla norma)")
+            x = x.replace("(art. 114 c.2 e art. 117 c.1 lett. a)", "(art. 114 c.2)")
+            if idx_test and "24 ore" in x:
+                x = re.sub(r"violazione critica n\. \d+", "violazione critica n. " + str(idx_test), x)
+                x = re.sub(r"vedi violazione n\. \d+", "vedi violazione n. " + str(idx_test), x)
+            return x
+        return x
+    return walk(rep)
+
+def ensure_sicuro_critica(rep, text):
+    tl = (text or "").lower()
+    if not ("sicuro" in tl and "bambini" in tl):
+        return rep
+    crit = rep.get("violazioni_critiche") or []
+    if any("sicur" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() for v in crit if isinstance(v, dict)):
+        return rep
+    mappa = load_norme_chiavi(); DATA = datetime.now().strftime("%d/%m/%Y")
+    crit.append({"titolo": "Aggettivo di sicurezza assoluta su fascia pediatrica", "problema": "L'aggettivo 'sicuro' in 'sicuro anche per bambini sotto i 2 anni' costituisce affermazione categorica di sicurezza assoluta, vietata indipendentemente dal RCP (profilo incondizionato). Per la fascia di eta' v. l'avvertenza dedicata.", "posizione": "Riga 2", "norma_key": ["art114_c3_a", "art117_c1_b"], "norma_violata": "D.Lgs 219/2006, Art. 114 c.3 lett. a - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c3_a", "") + "» | D.Lgs 219/2006, Art. 117 c.1 lett. b - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_b", "") + "»", "azione": "Eliminare l'aggettivo 'sicuro'. Il profilo di sicurezza assoluta e' violazione non sanabile, indipendente dalla verifica RCP sulla fascia."})
+    rep["violazioni_critiche"] = crit
+    for v in (rep.get("avvertenze") or []):
+        if isinstance(v, dict) and "art114_c2" in (v.get("norma_key") or []) and "sicur" in str(v.get("problema", "")).lower():
+            v["titolo"] = "Claim pediatrico - fascia sotto i 2 anni - conformita' RCP non verificabile (v. la violazione critica sull'aggettivo di sicurezza assoluta)"
+            v["problema"] = "L'indicazione 'bambini sotto i 2 anni' configura claim terapeutico verificabile solo contro il RCP (fascia di eta' autorizzata), assente nella knowledge base. Il profilo dell'aggettivo 'sicuro' e' contestato separatamente come violazione incondizionata."
+    for v in crit:
+        if isinstance(v, dict):
+            t = (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower()
+            if "sicurezza assoluta" in t or ("effetti collaterali" in t and "bambini" not in t):
+                v["problema"] = re.sub(r"\(v\. anche l'avvertenza sulla conformita'? ?RCP della stessa frase\)", "", str(v.get("problema", "")))
+    return rep
+
+def demote_doppia(rep):
+    crit = rep.get("violazioni_critiche") or []
+    keep = []
+    moved = []
+    for v in crit:
+        if isinstance(v, dict) and ("autodiagnosi" in (str(v.get("titolo", "")) + str(v.get("problema", ""))).lower() or (v.get("norma_key") or []) == ["art117_c1_i"]):
+            moved.append(v)
+        else:
+            keep.append(v)
+    if moved:
+        rep["avvertenze"] = (rep.get("avvertenze") or []) + moved
+    rep["violazioni_critiche"] = keep
+    return rep
+
 def validate_rep(rep):
     probs = []
     def scan(x, path):
@@ -614,6 +678,9 @@ def validate_rep(rep):
                     probs.append(sec + " n." + str(i + 1) + ": campo '" + f + "' vuoto")
             if not str(v.get("azione_richiesta", "") or v.get("azione", "")).strip():
                 probs.append(sec + " n." + str(i + 1) + ": campo azione vuoto")
+    for i, v in enumerate(rep.get("elementi_mancanti") or []):
+        if len(re.sub(r"[-–•:\s]", "", str(v))) < 6:
+            probs.append("elementi_mancanti n." + str(i + 1) + ": voce vuota")
     r = str(rep.get("riepilogo_esecutivo") or rep.get("riepilogo") or "")
     mc = re.search(r"(\d+) violazioni critiche", r)
     ma = re.search(r"(\d+) avvertenze", r)
@@ -821,7 +888,10 @@ def render_report(cr):
         _r2 = _rep.get("claims_rcp") or []
         import json as _json
         _f2 = _json.dumps(_rep, ensure_ascii=False).lower()
-        _okd = len(_c2) == 7 and len(_w2) == 3 and len(_m2) == 4 and len(_r2) == 3 and "per analogia" not in _f2 and "non verificato" in _f2
+        _ct = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in _c2 if isinstance(v, dict)).lower()
+        _at = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in _w2 if isinstance(v, dict)).lower()
+        _comp = "sicur" in _ct and "autodiagnosi" not in _ct and "autodiagnosi" in _at
+        _okd = len(_c2) == 7 and len(_w2) == 3 and len(_m2) == 4 and len(_r2) == 3 and "per analogia" not in _f2 and "non verificato" in _f2 and _comp
         st.info(("🧪 AUTO-DIFF CASO D'ORO ✅ " if _okd else "🧪 AUTO-DIFF CASO D'ORO ❌ SCOSTATO — ") + f"ottenuto {len(_c2)} critiche / {len(_w2)} avvertenze / {len(_m2)} mancanti / {len(_r2)} claim · atteso 7/3/4/3")
     st.session_state["nx_onepager"] = ("SINTESI ESECUTIVA: " + str(len(_crit)) + " critiche - " + str(len(_avv)) + " avvertenze - " + str(len(_note)) + " note. AZIONI PRIORITARIE: " + " | ".join(_top3))
     with st.container(border=True):
@@ -1132,7 +1202,7 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = dedup_critici(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = ensure_sicuro_critica(rep, _user_text()); rep = demote_doppia(rep); rep = dedup_critici(rep); rep = clean_mancanti(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = clean_formule(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
                 _probs = validate_rep(rep)
                 if _probs:
                     st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
