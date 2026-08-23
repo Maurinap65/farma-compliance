@@ -800,7 +800,11 @@ def render_md(rep, meta):
     L.append("DISCLAIMER: Report generato automaticamente dal sistema di Compliance QA. Validazione umana richiesta prima dell'uso.")
     L.append("TESTI NORMATIVI: consultabili su Normattiva (www.normattiva.it) - ricerca: 'Decreto Legislativo 219/2006' - testo vigente al " + DATA + ". NEXORA Deep Engine svolge l'analisi; Normattiva e' la fonte pubblica di verifica del testo di legge. NEXORA non e' affiliata a Normattiva.")
     s = "\n\n".join(L)
-    s = s.replace("...", "§§§").replace("..", ".").replace("§§§", "...")
+    import re as _re
+    s = s.replace("...", "§§§")
+    s = _re.sub(r"([a-zà-öø-ÿ])\s*\.\s*\.+", r"\1.", s)
+    s = _re.sub(r"['‘’]\s+", lambda m: m.group(0)[0], s)
+    s = s.replace("§§§", "...")
     return stamp_keys(s)
 
 def golden_check(rep, ad):
