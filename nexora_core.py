@@ -271,7 +271,7 @@ def ensure_chiavi(rep):
         ks = v.get("norma_key") or []
         ks = list(ks) if isinstance(ks, list) else [ks]
         ch = False
-        if ("farmacist" in t or "medico" in t or "dott." in t or "pneumologo" in t) and "art117_c1_f" not in ks:
+        if ("farmacist" in t or "consigliato dal" in t or "dott." in t or "pneumologo" in t) and "art117_c1_f" not in ks:
             ks.append("art117_c1_f"); ch = True
         if ("n.1" in t or "primato" in t or "superior" in t) and "art117_c1_b" not in ks:
             ks.append("art117_c1_b"); ch = True
@@ -295,6 +295,7 @@ def ensure_sicuro_critica(rep, text):
     for v in crit:
         if isinstance(v, dict) and "sicur" in _t(v) and "effetti collaterali" in _t(v):
             v["titolo"] = "Affermazione di assenza totale di effetti collaterali"
+            v["problema"] = re.sub(r",?\s*sicuro anche per bambini sotto i 2 anni", "", str(v.get("problema", "")))
     mappa, DATA = load_norme(), _data()
     crit.append({"titolo": "Aggettivo di sicurezza assoluta su fascia pediatrica", "problema": "L'aggettivo 'sicuro' in 'sicuro anche per bambini sotto i 2 anni' costituisce affermazione categorica di sicurezza assoluta, vietata indipendentemente dal RCP (profilo incondizionato). Per la fascia di eta' v. l'avvertenza dedicata.", "posizione": "Seconda riga", "norma_key": ["art114_c3_a", "art117_c1_b"], "norma_violata": "D.Lgs 219/2006, Art. 114 c.3 lett. a - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c3_a", "") + "» | D.Lgs 219/2006, Art. 117 c.1 lett. b - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_b", "") + "»", "azione": "Eliminare l'aggettivo 'sicuro'. Il profilo di sicurezza assoluta e' violazione non sanabile, indipendente dalla verifica RCP sulla fascia."})
     rep["violazioni_critiche"] = crit
@@ -367,7 +368,7 @@ def fix_notes(rep):
     crit_txt = " ".join(str(v.get("titolo", "")) + str(v.get("problema", "")) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)).lower()
     out = []
     for nte in notes:
-        s = str(nte)
+        s = str(nte.get("titolo", "") + " " + nte.get("testo", "")).strip() if isinstance(nte, dict) else str(nte)
         sl = s.lower()
         if "oltre a quelli già contestati" in sl or "non presenta titoli o qualifiche particolari" in sl or "direttore sanitario" in sl or "claim da verificare contro rcp" in sl or "non sono presenti titoli, qualifiche" in sl or "denominazione comune" in sl or ("inn" in sl and "sostanza" in sl):
             continue
@@ -377,7 +378,7 @@ def fix_notes(rep):
         if "informazione non presente nei documenti caricati" in sl and not any(w in sl for w in ("rcp", "knowledge base", "layout", "grafic", "immagine")):
             s = s.replace("Informazione non presente nei documenti caricati. Verifica manuale richiesta.", "").replace("Informazione non presente nei documenti caricati.", "").strip()
         if s.strip():
-            out.append(nte if isinstance(nte, dict) else s)
+            out.append(s)
     rep["note_informative"] = out
     return rep
 
@@ -453,6 +454,7 @@ def clean_formule(rep):
         if isinstance(x, str):
             x = x.replace("formula obbligatoria", "formula consigliata di prassi (non prescritta dalla norma)")
             x = x.replace("(art. 114 c.2 e art. 117 c.1 lett. a)", "(art. 114 c.2)")
+            x = re.sub(r"\.\.+", ".", x)
             if idx_test and "24 ore" in x:
                 x = re.sub(r"violazione critica n\. \d+", "violazione critica n. " + str(idx_test), x)
                 x = re.sub(r"vedi violazione n\. \d+", "vedi violazione n. " + str(idx_test), x)
@@ -633,7 +635,9 @@ def build_azioni(rep):
         if isinstance(v, dict):
             az.append((str(v.get("azione_richiesta", "") or v.get("azione", "")) or "Eliminare/integrare quanto contestato") + " (violazione critica n. " + str(i) + ")")
     for v in rep.get("elementi_mancanti") or []:
-        az.append("Integrare l'elemento obbligatorio mancante: " + (str(v) if not isinstance(v, dict) else str(v.get("elemento", v.get("titolo", "")))))
+        s = str(v) if not isinstance(v, dict) else str(v.get("elemento", v.get("titolo", "")))
+        s = s.split(" | ")[0].strip()
+        az.append("Integrare l'elemento obbligatorio mancante: " + s)
     for i, v in enumerate(rep.get("avvertenze") or [], 1):
         if isinstance(v, dict):
             az.append((str(v.get("azione", "")) or "Verificare il punto") + " (avvertenza n. " + str(i) + ")")
