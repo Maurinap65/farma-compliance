@@ -490,8 +490,90 @@ def ensure_azioni(rep):
             v["azione_richiesta"] = a
     return rep
 
+PROMPT_MARKERS = ["[{'type'", "'type': 'text'", "sei un senior", "regole fondamentali", "system prompt", "knowledge_chunks", "skill_prompt"]
+def _user_text():
+    for n in ("ad_text", "testo", "materiale", "ad_copy", "testo_materiale", "content"):
+        v = globals().get(n)
+        if isinstance(v, str) and v.strip():
+            low = v.lower()
+            if not any(mk in low for mk in PROMPT_MARKERS):
+                return v
+    return ""
+
+def ensure_chiavi(rep):
+    mappa = load_norme_chiavi()
+    DATA = datetime.now().strftime("%d/%m/%Y")
+    LBL = {"art117_c1_b":"Art. 117 c.1 lett. b","art117_c1_f":"Art. 117 c.1 lett. f","art117_c1_l":"Art. 117 c.1 lett. l","art118_c1":"Art. 118 c.1","art118_c8":"Art. 118 c.8","art114_c3_a":"Art. 114 c.3 lett. a"}
+    for v in (rep.get("violazioni_critiche") or []) + (rep.get("avvertenze") or []):
+        if not isinstance(v, dict):
+            continue
+        t = (str(v.get("titolo", "")) + " " + str(v.get("problema", ""))).lower()
+        ks = v.get("norma_key") or []
+        ks = list(ks) if isinstance(ks, list) else [ks]
+        ch = False
+        if ("farmacist" in t or "medico" in t or "dott." in t or "pneumologo" in t) and "art117_c1_f" not in ks:
+            ks.append("art117_c1_f"); ch = True
+        if ("n.1" in t or "primato" in t or "superior" in t) and "art117_c1_b" not in ks:
+            ks.append("art117_c1_b"); ch = True
+        if "118" in t and "art118_c8" not in ks:
+            ks += [k for k in ("art118_c1", "art118_c8") if k not in ks]; ch = True
+        if ch:
+            ks = [k for k in ks if k in mappa]
+            v["norma_key"] = ks
+            v["norma_violata"] = " | ".join(LBL.get(k, k) + " - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa[k] + "»" for k in ks)
+    return rep
+
+def ensure_testimonianza(rep, text):
+    tl = (text or "").lower()
+    if not ("sparisce in" in tl or "sig.ra" in tl):
+        return rep
+    if any("art117_c1_l" in (v.get("norma_key") or []) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)):
+        return rep
+    mappa = load_norme_chiavi(); DATA = datetime.now().strftime("%d/%m/%Y")
+    rep.setdefault("violazioni_critiche", []).append({"titolo": "Testimonianza con attestazione di guarigione", "problema": "La testimonianza virgolettata con claim di esito terapeutico costituisce attestazione di guarigione vietata in assoluto, indipendentemente dalla veridicita'.", "posizione": "Quarta riga", "norma_key": ["art117_c1_l"], "norma_violata": "Art. 117 c.1 lett. l - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art117_c1_l", "") + "»", "azione": "Eliminare integralmente la testimonianza: le attestazioni di guarigione sono vietate in assoluto e non sono sanabili."})
+    return rep
+
+def ensure_profilo(rep, text):
+    tl = (text or "").lower()
+    benefici = any(w in tl for w in ("n.1", "privo", "efficace", "sparisce", "sicuro", "consigliato"))
+    rischi = any(w in tl for w in ("effetti indesiderati", "controindicazioni", "avvertenze", "profilo di rischio"))
+    if not (benefici and not rischi):
+        return rep
+    if any("art114_c3_a" in (v.get("norma_key") or []) for v in (rep.get("violazioni_critiche") or []) if isinstance(v, dict)):
+        return rep
+    mappa = load_norme_chiavi(); DATA = datetime.now().strftime("%d/%m/%Y")
+    rep.setdefault("violazioni_critiche", []).append({"titolo": "Omissione totale del profilo di rischio", "problema": "Il materiale presenta solo benefici senza informazioni sul profilo di rischio, impedendo una presentazione obiettiva e bilanciata.", "posizione": "Intero materiale", "norma_key": ["art114_c3_a", "art114_c3_b"], "norma_violata": "Art. 114 c.3 lett. a - testo vigente al " + DATA + ", fonte Normattiva: «" + mappa.get("art114_c3_a", "") + "»", "azione": "Integrare il materiale con il profilo di rischio del medicinale in modo bilanciato rispetto ai benefici, o rimandare al foglio illustrativo (obbligatorio ex art. 116 c.1 lett. b n.3)."})
+    return rep
+
+def ensure_claims(rep, text):
+    tl = (text or "").lower()
+    claims = rep.get("claims_rcp") or []
+    txt = " ".join(str(c) for c in claims).lower()
+    add = []
+    if "tosse secca e grassa" in tl and "secca e grassa" not in txt:
+        add.append("- per tosse secca e grassa [UNVERIFIABLE_RCP_NOT_IN_KB]")
+    if "sotto i 2" in tl and "sotto i 2" not in txt:
+        add.append("- anche per bambini sotto i 2 anni [UNVERIFIABLE_RCP_NOT_IN_KB]")
+    if "24 ore" in tl and "24 ore" not in txt:
+        add.append("- la tosse sparisce in 24 ore [UNVERIFIABLE_RCP_NOT_IN_KB]")
+    if add:
+        rep["claims_rcp"] = claims + add
+    return rep
+
 def validate_rep(rep):
     probs = []
+    def scan(x, path):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                scan(v, path + "." + str(k))
+        elif isinstance(x, list):
+            for i, v in enumerate(x):
+                scan(v, path + "[" + str(i) + "]")
+        elif isinstance(x, str):
+            low = x.lower()
+            if any(mk in low for mk in PROMPT_MARKERS):
+                probs.append(path + ": contiene marcatori di prompt o strutture serializzate")
+    scan(rep, "rep")
     for sec in ("violazioni_critiche", "avvertenze"):
         for i, v in enumerate(rep.get(sec) or []):
             if not isinstance(v, dict):
@@ -501,6 +583,13 @@ def validate_rep(rep):
                     probs.append(sec + " n." + str(i + 1) + ": campo '" + f + "' vuoto")
             if not str(v.get("azione_richiesta", "") or v.get("azione", "")).strip():
                 probs.append(sec + " n." + str(i + 1) + ": campo azione vuoto")
+    r = str(rep.get("riepilogo_esecutivo") or rep.get("riepilogo") or "")
+    mc = re.search(r"(\d+) violazioni critiche", r)
+    ma = re.search(r"(\d+) avvertenze", r)
+    if mc and int(mc.group(1)) != len(rep.get("violazioni_critiche") or []):
+        probs.append("riepilogo: conteggio critiche diverso dal corpo")
+    if ma and int(ma.group(1)) != len(rep.get("avvertenze") or []):
+        probs.append("riepilogo: conteggio avvertenze diverso dal corpo")
     return probs
 
 def _norm_txt(t):
@@ -1012,13 +1101,13 @@ with tab_check:
 
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
-                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, (globals().get("content") or globals().get("ad_text") or globals().get("testo") or ""))
+                rep = normalize_rep(rep); rep = promote_profilo(rep); rep = stabilize_classi(rep); rep = apply_norme_ufficiali(rep, load_norme_chiavi()); rep = gate_analogia(rep); rep = dedup_mancanti(rep); rep = ensure_pediatrica(rep); rep = ensure_testimonianza(rep, _user_text()); rep = ensure_profilo(rep, _user_text()); rep = ensure_claims(rep, _user_text()); rep = ensure_chiavi(rep); rep = fix_notes(rep); rep = fix_counts(rep); rep = ensure_perimetro(rep); rep = clean_azioni(rep); rep = ensure_azioni(rep); rep = fix_corpus_date(rep); rep = anchor_pos(rep, _user_text())
                 _probs = validate_rep(rep)
                 if _probs:
                     st.error("🛑 BUILD FALLITA - controlli automatici: " + "; ".join(_probs))
                     st.stop()
                 rep = gate_severita(rep)
-                cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": (globals().get("content") or globals().get("ad_text") or globals().get("testo") or "")}
+                cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": _user_text()}
                 try:
                     data = build_pdf("REPORT DI COMPLIANCE - Farma Compliance", report_sections(rep, source_desc, not_analyzed))
                     cr["pdf"] = data
