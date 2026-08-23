@@ -107,7 +107,7 @@ def ask_claude_stream(api_key, system_blocks, user_text, image_b64=None, mime="i
                 headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
                 json={"model": model, "max_tokens": max_tokens, "system": system_blocks,
                       "messages": [{"role": "user", "content": content}], "stream": True},
-                timeout=600, stream=True)
+                timeout=(10, 90), stream=True)
             if r.status_code != 200:
                 err = _check_error(r)
                 if err == "model":
