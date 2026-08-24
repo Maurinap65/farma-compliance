@@ -377,6 +377,33 @@ def _norm(t):
     return re.sub(r"[^a-z0-9]+", "", _s(t).lower())
 
 
+def unisci_documentwide(rep):
+    """
+    Due rilievi senza quote, con chiavi in rapporto di contenimento e titoli
+    sovrapponibili, sono lo stesso rilievo espresso due volte dal modello.
+    Tiene quello piu' fondato (piu' chiavi) e piu' descritto.
+    """
+    cand = [v for v in rep["rilievi"] if not _s(v.get("quote"))]
+    scarta = set()
+    for i, a in enumerate(cand):
+        for b in cand[i + 1:]:
+            if id(a) in scarta or id(b) in scarta:
+                continue
+            ka, kb = set(a["norma_key"]), set(b["norma_key"])
+            if not ka or not kb or not (ka <= kb or kb <= ka):
+                continue
+            ta, tb = _token(a["titolo"]), _token(b["titolo"])
+            if not ta or not tb:
+                continue
+            if len(ta & tb) / min(len(ta), len(tb)) < 0.6:
+                continue
+            peggiore = a if (len(ka), len(_s(a["problema"]))) < (len(kb), len(_s(b["problema"]))) else b
+            scarta.add(id(peggiore))
+    if scarta:
+        rep["rilievi"] = [v for v in rep["rilievi"] if id(v) not in scarta]
+    return rep
+
+
 # ----------------------------------------------------------------------------
 # CLASSIFICAZIONE
 # ----------------------------------------------------------------------------
@@ -425,7 +452,9 @@ def ancora_posizioni(rep, testo):
                     if qn in _norm(f):
                         f = f.strip()
                         return "Riga %d (%s)" % (i, f if len(f) <= 90 else f[:87] + "...")
-                return "Riga %d" % i
+                # abbreviazioni come "Dott." spezzano la frase: ricado sulla riga intera
+                riga = riga.strip()
+                return "Riga %d (%s)" % (i, riga if len(riga) <= 90 else riga[:87] + "...")
         return None
 
     for v in rep["rilievi"]:
@@ -504,14 +533,39 @@ def completa_azioni(rep):
             if k not in v["norma_key"] or marker in usati:
                 continue
             usati.add(marker)
-            if marker not in a.lower():
-                a = (a.rstrip() + " " + testo).strip()
+            if marker in a.lower() or _gia_detto(testo, a):
+                continue
+            a = a.rstrip()
+            if a and a[-1] not in ".;:!?":
+                a += "."
+            a = (a + " " + testo).strip()
         v["azione"] = pulisci(a)
         if _norm(v["problema"]) == _norm(v["titolo"]):
             v["problema"] = "Il materiale non contiene: %s." % _minuscola_iniziale(v["titolo"].rstrip("."))
         v["problema"] = pulisci(v["problema"])
         v["titolo"] = pulisci(v["titolo"])
     return rep
+
+
+def _tronca(t, n):
+    """Troncamento a confine di parola: le abbreviazioni (es., Dott.) non
+    possono essere usate come fine frase."""
+    t = _s(t).strip().rstrip(".;")
+    if len(t) <= n:
+        return t
+    taglio = t[:n]
+    sp = taglio.rfind(" ")
+    return (taglio[:sp] if sp > n // 2 else taglio).rstrip(" ,;.") + "..."
+
+
+def _token(t):
+    return {w for w in re.findall(r"[a-z\u00e0-\u00ff]{4,}", _s(t).lower())}
+
+
+def _gia_detto(nuovo, esistente, soglia=0.6):
+    """Vero se il messaggio della coda e' gia' espresso, anche parafrasato."""
+    a, b = _token(nuovo), _token(esistente)
+    return bool(a) and len(a & b) / len(a) >= soglia
 
 
 def _minuscola_iniziale(t):
@@ -567,6 +621,7 @@ def filtro_analogia(rep):
 def pulisci_note(rep):
     """Una nota che non segnala nulla non e' una nota."""
     corpo = _norm(" ".join(v["titolo"] + v["problema"] for v in rep["rilievi"]))
+    chiavi_gia_contestate = {k for v in rep["rilievi"] for k in v["norma_key"]}
     out, visti = [], set()
     for s in rep["note_informative"]:
         s = pulisci(s)
@@ -584,6 +639,9 @@ def pulisci_note(rep):
         if not n or n in visti:
             continue
         if len(n) > 40 and n[:60] in corpo:      # duplica un rilievo gia' contestato
+            continue
+        kn = set(_estrai_chiavi_da_testo({"problema": s}))
+        if kn and kn <= chiavi_gia_contestate:   # cita una norma gia' contestata altrove
             continue
         visti.add(n)
         out.append(s if s.endswith((".", "!", "?")) else s + ".")
@@ -672,6 +730,7 @@ def pipeline(rep, testo, corpus=None, strict=True):
     rep = classifica(rep)
     rep = cita_norme(rep, corpus)
     rep = degrada_senza_norma(rep)
+    rep = unisci_documentwide(rep)
     rep = filtro_analogia(rep)
     rep = ancora_posizioni(rep, testo)
     rep = completa_azioni(rep)
@@ -733,8 +792,9 @@ def render_md(rep, corpus, meta=None):
     L.append("Rilievi: %d violazioni critiche, %d avvertenze, %d elementi obbligatori mancanti; "
              "%d claim richiedono verifica contro il RCP." % (c, w, m, r))
     if g[CRITICA]:
+        prima = _tronca(g[CRITICA][0]["azione"], 120)
         L.append("Azioni prioritarie: 1) sospendere immediatamente la divulgazione; "
-                 "2) " + g[CRITICA][0]["azione"].rstrip(".").lower() + "; "
+                 "2) " + _minuscola_iniziale(prima) + "; "
                  "3) integrare gli elementi obbligatori mancanti.")
 
     def blocco(v, etichetta, campo_norma):
