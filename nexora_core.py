@@ -224,6 +224,8 @@ def _s(v, d=""):
 
 
 def _oneline(v, d=""):
+    if isinstance(v, (list, tuple)):
+        v = " - ".join(_s(x) for x in v if _s(x))
     return _s(v, d).replace("\r", " ").split("\n")[0].strip() or d
 
 
@@ -430,16 +432,30 @@ def ancora_posizioni(rep, testo):
         if v["severita"] == MANCANTE or set(v["norma_key"]) <= DOC_WIDE:
             v["posizione"] = "Intero materiale"
             continue
-        p = trova(v.get("quote")) or trova(v.get("problema"))
+        p = trova(v.get("quote"))
+        if not p:
+            # il modello spesso cita il testo contestato fra virgolette dentro il problema
+            for cand in _virgolettati(v.get("problema")) + _virgolettati(v.get("posizione")):
+                p = trova(cand)
+                if p:
+                    if not _s(v.get("quote")):
+                        v["quote"] = cand
+                    break
         if p:
             v["posizione"] = p
         elif _s(v.get("posizione")):
             v["posizione"] = _s(v["posizione"])
-            v["_pos_non_ancorata"] = True
         else:
             v["posizione"] = "Non localizzato nel testo fornito"
             v["_pos_non_ancorata"] = True
     return rep
+
+
+def _virgolettati(t):
+    """Estrae i frammenti fra virgolette, dal piu' lungo al piu' corto."""
+    t = _s(t)
+    fr = re.findall(r"[\u00ab\u201c\"']([^\u00bb\u201d\"']{8,160})[\u00bb\u201d\"']", t)
+    return sorted({f.strip() for f in fr}, key=len, reverse=True)
 
 
 def rimandi_incrociati(rep):
@@ -479,8 +495,8 @@ def completa_azioni(rep):
     for v in rep["rilievi"]:
         a = _s(v.get("azione"))
         if not a:
-            if v["severita"] == MANCANTE:
-                a = "Integrare il materiale con: %s." % v["titolo"].rstrip(".").lower()
+            if v["severita"] == MANCANTE or v.get("_origine") == "elementi_mancanti":
+                a = "Integrare il materiale con: %s." % _minuscola_iniziale(v["titolo"].rstrip("."))
             else:
                 a = AZIONE_DEFAULT[v["severita"]]
         usati = set()
@@ -491,9 +507,17 @@ def completa_azioni(rep):
             if marker not in a.lower():
                 a = (a.rstrip() + " " + testo).strip()
         v["azione"] = pulisci(a)
+        if _norm(v["problema"]) == _norm(v["titolo"]):
+            v["problema"] = "Il materiale non contiene: %s." % _minuscola_iniziale(v["titolo"].rstrip("."))
         v["problema"] = pulisci(v["problema"])
         v["titolo"] = pulisci(v["titolo"])
     return rep
+
+
+def _minuscola_iniziale(t):
+    """Abbassa solo la prima lettera: preserva acronimi come INN, AIC, RCP."""
+    t = _s(t)
+    return (t[0].lower() + t[1:]) if t else t
 
 
 def pulisci(s):
@@ -783,6 +807,17 @@ def pulisci_md(s):
     return s
 
 
+# Senza font Unicode il PDF ricade su Helvetica/latin-1: questi caratteri
+# diventerebbero "?" invece di sparire in modo pulito.
+_TRAD_LATIN1 = {ord(k): v for k, v in {
+    "\u2014": "-", "\u2013": "-", "\u2212": "-",
+    "\u2018": "'", "\u2019": "'", "\u201a": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"',
+    "\u2026": "...", "\u2022": "-", "\u00a0": " ",
+    "\u2192": "->", "\u2265": ">=", "\u2264": "<=",
+}.items()}
+
+
 def make_pdf(md):
     """UTF-8 vero: niente encode latin-1, niente spezzatura a meta' parola."""
     try:
@@ -815,6 +850,6 @@ def make_pdf(md):
         else:
             pdf.set_font(font, "", 9)
         if font == "Helvetica":
-            riga = riga.encode("latin-1", "replace").decode("latin-1")
+            riga = riga.translate(_TRAD_LATIN1).encode("latin-1", "replace").decode("latin-1")
         pdf.multi_cell(0, 4.6, riga)      # wrapping a parola, non a 100 caratteri
     return bytes(pdf.output())
