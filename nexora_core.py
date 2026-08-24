@@ -395,7 +395,10 @@ def unisci_documentwide(rep):
             ta, tb = _token(a["titolo"]), _token(b["titolo"])
             if not ta or not tb:
                 continue
-            if len(ta & tb) / min(len(ta), len(tb)) < 0.6:
+            # chiavi identiche = quasi sempre lo stesso rilievo detto due volte:
+            # basta una sovrapposizione tematica. Contenimento stretto: piu' cautela.
+            soglia = 0.3 if ka == kb else 0.6
+            if len(ta & tb) / min(len(ta), len(tb)) < soglia:
                 continue
             peggiore = a if (len(ka), len(_s(a["problema"]))) < (len(kb), len(_s(b["problema"]))) else b
             scarta.add(id(peggiore))
@@ -461,15 +464,19 @@ def ancora_posizioni(rep, testo):
         if v["severita"] == MANCANTE or set(v["norma_key"]) <= DOC_WIDE:
             v["posizione"] = "Intero materiale"
             continue
-        p = trova(v.get("quote"))
-        if not p:
-            # il modello spesso cita il testo contestato fra virgolette dentro il problema
-            for cand in _virgolettati(v.get("problema")) + _virgolettati(v.get("posizione")):
-                p = trova(cand)
-                if p:
-                    if not _s(v.get("quote")):
-                        v["quote"] = cand
-                    break
+        # candidati: la quote del modello piu' i virgolettati contenuti nel problema.
+        # Si sceglie il frammento piu' lungo effettivamente presente nel materiale:
+        # il modello a volte cita l'attribuzione ("sig.ra Bianchi") invece del claim.
+        cand = [c for c in ([_s(v.get("quote"))] + _virgolettati(v.get("problema"))
+                            + _virgolettati(v.get("posizione"))) if c]
+        p, scelta = None, None
+        for c in sorted(set(cand), key=len, reverse=True):
+            t = trova(c)
+            if t:
+                p, scelta = t, c
+                break
+        if scelta:
+            v["quote"] = scelta
         if p:
             v["posizione"] = p
         elif _s(v.get("posizione")):
@@ -480,11 +487,23 @@ def ancora_posizioni(rep, testo):
     return rep
 
 
+_COPPIE = [
+    ("\u00ab", "\u00bb"), ("\u201c", "\u201d"), ('"', '"'), ("\u2018", "\u2019"),
+]
+
+
 def _virgolettati(t):
-    """Estrae i frammenti fra virgolette, dal piu' lungo al piu' corto."""
+    """
+    Frammenti fra virgolette, dal piu' lungo al piu' corto.
+    L'apostrofo italiano (un'attestazione, dell'AIC) NON e' un delimitatore:
+    l'apice singolo vale solo se non e' incastonato fra lettere.
+    """
     t = _s(t)
-    fr = re.findall(r"[\u00ab\u201c\"']([^\u00bb\u201d\"']{8,160})[\u00bb\u201d\"']", t)
-    return sorted({f.strip() for f in fr}, key=len, reverse=True)
+    fr = []
+    for ap, ch in _COPPIE:
+        fr += re.findall("%s([^%s]{8,160})%s" % (re.escape(ap), re.escape(ch), re.escape(ch)), t)
+    fr += re.findall(r"(?<![A-Za-z\u00c0-\u00ff])'([^']{8,160})'(?![A-Za-z\u00c0-\u00ff])", t)
+    return sorted({f.strip() for f in fr if f.strip()}, key=len, reverse=True)
 
 
 def rimandi_incrociati(rep):
@@ -556,6 +575,16 @@ def _tronca(t, n):
     taglio = t[:n]
     sp = taglio.rfind(" ")
     return (taglio[:sp] if sp > n // 2 else taglio).rstrip(" ,;.") + "..."
+
+
+def _prima_frase(t, maxlen=150):
+    """Prima frase compiuta. Un punto e' fine frase solo se la parola che lo
+    precede ha almeno 5 lettere: esclude Dott., es., art., sez., n., lett."""
+    t = _s(t).strip()
+    for m in re.finditer(r"([A-Za-z\u00c0-\u00ff]+)['\"\u00bb\u201d)]*\.\s+(?=[A-Z\u00c0-\u00dd])", t):
+        if len(m.group(1)) >= 5:
+            return t[:m.end()].strip()
+    return _tronca(t, maxlen)
 
 
 def _token(t):
@@ -792,7 +821,7 @@ def render_md(rep, corpus, meta=None):
     L.append("Rilievi: %d violazioni critiche, %d avvertenze, %d elementi obbligatori mancanti; "
              "%d claim richiedono verifica contro il RCP." % (c, w, m, r))
     if g[CRITICA]:
-        prima = _tronca(g[CRITICA][0]["azione"], 120)
+        prima = _prima_frase(g[CRITICA][0]["azione"]).rstrip(".")
         L.append("Azioni prioritarie: 1) sospendere immediatamente la divulgazione; "
                  "2) " + _minuscola_iniziale(prima) + "; "
                  "3) integrare gli elementi obbligatori mancanti.")
