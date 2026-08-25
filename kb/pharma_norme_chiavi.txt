@@ -3,16 +3,16 @@
 # NOTA: incollare qui il testo LETTERALE. Nessuna parafrasi.
 
 [KEY art114_c2]
-La pubblicita' di un medicinale e' conforme al riassunto delle caratteristiche del prodotto.
+La pubblicità di un medicinale è conforme al riassunto delle caratteristiche del prodotto.
 
 [KEY art114_c3_a]
-La pubblicita' di un medicinale deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprieta'.
+La pubblicità di un medicinale deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprietà.
 
 [KEY art114_c3_b]
-La pubblicita' di un medicinale non puo' essere ingannevole.
+La pubblicità di un medicinale non può essere ingannevole.
 
 [KEY art116_c1_a]
-La pubblicita' di un medicinale presso il pubblico e' realizzata in modo che la natura pubblicitaria del messaggio e' evidente e il prodotto e' chiaramente identificato come medicinale.
+La pubblicità di un medicinale presso il pubblico è realizzata in modo che la natura pubblicitaria del messaggio è evidente e il prodotto è chiaramente identificato come medicinale.
 
 [KEY art116_c1_b1]
 la denominazione del medicinale e la denominazione comune della sostanza attiva;
@@ -39,4 +39,15 @@ possa indurre ad una errata autodiagnosi;
 faccia riferimento, in termini impropri, allarmistici o ingannevoli, ad attestati di guarigione;
 
 [KEY art118_c1]
-Nessuna pubblicita' di medicinali presso il pubblico puo' essere effettuata senza autorizzazione del Ministero della salute.
+Nessuna pubblicità di medicinali presso il pubblico può essere effettuata senza autorizzazione del Ministero della salute.
+
+[KEY art113_c1_a]
+per pubblicità di medicinali: qualsiasi forma di informazione, di ricerca di mercato e di incentivazione alla prescrizione, alla fornitura, alla vendita o al consumo di medicinali;
+
+
+[KEY art117_c1_a]
+induca a ritenere che la visita medica o l'intervento chirurgico siano superflui, in particolare offrendo una diagnosi o suggerendo un trattamento per corrispondenza;
+
+
+[KEY art118_c8]
+Decorsi quarantacinque giorni dalla presentazione della domanda senza osservazioni del Ministero della salute, la pubblicità si intende autorizzata.
