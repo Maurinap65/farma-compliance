@@ -39,8 +39,7 @@ possa indurre ad una errata autodiagnosi;
 faccia riferimento, in termini impropri, allarmistici o ingannevoli, ad attestati di guarigione;
 
 [KEY art118_c1]
-Nessuna pubblicità di medicinali presso il pubblico può essere effettuata senza autorizzazione del Ministero della salute.
-
+Nessuna pubblicità di medicinali presso il pubblico può essere effettuata senza autorizzazione del Ministero della salute, ad eccezione: a) delle inserzioni pubblicitarie sulla stampa quotidiana o periodica che, ferme restando le disposizioni dell'articolo 116, comma 1, si limitano a riprodurre integralmente e senza modifiche le indicazioni, le controindicazioni, le opportune precauzioni d'impiego, le interazioni, le avvertenze speciali, gli effetti indesiderati descritti nel foglio illustrativo, con l'eventuale aggiunta di una fotografia o di una rappresentazione grafica dell'imballaggio esterno o del confezionamento primario del medicinale; b) delle fotografie o rappresentazioni grafiche dell'imballaggio esterno o del confezionamento primario dei medicinali apposte sui cartelli dei prezzi di vendita al pubblico e degli eventuali sconti praticati esposti da coloro che svolgono attività di fornitura al pubblico, limitatamente ai farmaci di cui all'articolo 5 del decreto-legge 4 luglio 2006, n. 223, convertito, con modificazioni, dalla legge 4 agosto 2006, n. 248.
 [KEY art113_c1_a]
 per pubblicità di medicinali: qualsiasi forma di informazione, di ricerca di mercato e di incentivazione alla prescrizione, alla fornitura, alla vendita o al consumo di medicinali;
 
@@ -50,4 +49,4 @@ induca a ritenere che la visita medica o l'intervento chirurgico siano superflui
 
 
 [KEY art118_c8]
-Decorsi quarantacinque giorni dalla presentazione della domanda senza osservazioni del Ministero della salute, la pubblicità si intende autorizzata.
+Decorsi quarantacinque giorni dalla presentazione della domanda diretta ad ottenere l'autorizzazione alla pubblicità di un medicinale, la mancata comunicazione al richiedente, da parte del Ministero della salute, della non accoglibilità della domanda costituisce, a tutti gli effetti, rilascio dell'autorizzazione richiesta. Nel messaggio pubblicitario deve, conseguentemente, essere riportata l'indicazione: «autorizzazione su domanda del ...» seguita dalla data in cui la domanda di autorizzazione è pervenuta al Ministero della salute.
