@@ -599,8 +599,9 @@ def ancora_posizioni(rep, testo):
 
     for v in rep["rilievi"]:
         quote_modello = _s(v.get("quote"))
-        cand = [c for c in ([quote_modello] + _virgolettati(v.get("problema"))
-                            + _virgolettati(v.get("posizione"))) if c]
+        doc_wide = v["severita"] == MANCANTE or (v["norma_key"] and set(v["norma_key"]) <= DOC_WIDE)
+        cand = [quote_modello] if doc_wide else ([quote_modello] + _virgolettati(v.get("problema")) + _virgolettati(v.get("posizione")))
+        cand = [c for c in cand if c]
         p, scelta = None, None
         for c in sorted(set(cand), key=len, reverse=True):
             t = trova(c)
@@ -958,12 +959,16 @@ def azioni_raccomandate(rep):
     g = ordina(rep)
     az = ["Sospendere immediatamente la divulgazione del materiale fino al completamento "
           "delle azioni correttive."]
-    for i, v in enumerate(g[CRITICA], 1):
-        az.append("%s (violazione critica n. %d)" % (v["azione"], i))
-    for i, v in enumerate(g[MANCANTE], 1):
-        az.append("%s (elemento mancante n. %d)" % (v["azione"], i))
-    for i, v in enumerate(g[AVVERTENZA], 1):
-        az.append("%s (avvertenza n. %d)" % (v["azione"], i))
+    visti = {}
+    for nome, lst in (("violazione critica", g[CRITICA]), ("elemento mancante", g[MANCANTE]), ("avvertenza", g[AVVERTENZA])):
+        for i, v in enumerate(lst, 1):
+            k = _norm(v["azione"])
+            rif = "%s n. %d" % (nome, i)
+            if k in visti:
+                az[visti[k]] = az[visti[k]][:-1] + ", " + rif + ")"
+            else:
+                visti[k] = len(az)
+                az.append("%s (%s)" % (v["azione"], rif))
     for c in rep.get("claims_rcp") or []:
         sez = (" \u2014 sezioni %s" % c["sezioni_rcp"]) if c["sezioni_rcp"] else ""
         az.append("Verificare contro il RCP autorizzato il claim: \u00ab%s\u00bb%s"
