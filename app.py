@@ -896,6 +896,10 @@ def render_report(cr):
         st.code(cr["pdf_errore"])
     if st.session_state.get("pdf_bytes"):
         st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name=(st.session_state.get("report_code") or "report_compliance") + ".pdf", mime="application/pdf", key="dl_pdf")
+    st.write("PROVA CLICK - contatore:", st.session_state.get("nx_prova", 0))
+    if st.button("Pulsante di prova", key="nx_test"):
+        st.session_state["nx_prova"] = st.session_state.get("nx_prova", 0) + 1
+        st.rerun()
 
 def clear_check():
     st.session_state.clear_count = st.session_state.get("clear_count", 0) + 1
