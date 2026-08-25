@@ -804,6 +804,8 @@ def pulisci_note(rep):
         s = pulisci(s)
         if len(_norm(s)) < 25:
             continue
+        if any(m in s.lower() for m in PROMPT_MARKERS + ANALOGIA_TERMS):
+            continue
         if any(m in s.lower() for m in PROMPT_MARKERS):
             continue
         if re.search(r"(?i)\bnon\s+(presenta|presentano|sono\s+presenti|risultano|vi\s+sono|"
@@ -881,7 +883,8 @@ def valida(rep, corpus, strict=True):
             if any(t in low for t in ANALOGIA_TERMS):
                 p.append("%s: contiene un'estensione analogica" % path)
 
-    scan({k: v for k, v in rep.items() if k not in ("rilievi", "_fusioni")}, "rep")
+    RESI = ("tipo_materiale", "stato", "claims_rcp", "note_informative", "_fusioni")
+    scan({k: rep.get(k) for k in RESI if rep.get(k)}, "rep")
 
     g = ordina(rep)
     nome = {CRITICA: "violazione critica", AVVERTENZA: "avvertenza", MANCANTE: "elemento mancante"}
