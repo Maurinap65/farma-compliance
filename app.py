@@ -888,18 +888,11 @@ def render_report(cr):
         st.session_state["pdf_bytes"] = cr.get("pdf") or nexora_core.make_pdf(md, codice=code, logo="assets/logo.png")
         st.session_state["pdf_code"] = code
     if not st.session_state["pdf_bytes"]: st.error("PDF: "+(nexora_core.ULTIMO_ERRORE_PDF or "causa sconosciuta"))
-    if st.session_state["pdf_bytes"]:
-        import base64 as _b
-        st.markdown("<a download=\""+(code or "report")+".pdf\" href=\"data:application/pdf;base64,"+_b.b64encode(st.session_state["pdf_bytes"]).decode()+"\">Scarica PDF (link diretto)</a>", unsafe_allow_html=True)
     if not cr.get("pdf") and cr.get("pdf_errore"):
         st.error("PDF non generato. Copia questo testo e mandalo in chat:")
         st.code(cr["pdf_errore"])
     if st.session_state.get("pdf_bytes"):
         st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name=(st.session_state.get("report_code") or "report_compliance") + ".pdf", mime="application/pdf", key="dl_pdf")
-    st.write("PROVA CLICK - contatore:", st.session_state.get("nx_prova", 0))
-    if st.button("Pulsante di prova", key="nx_test"):
-        st.session_state["nx_prova"] = st.session_state.get("nx_prova", 0) + 1
-        st.rerun()
 
 def clear_check():
     st.session_state.clear_count = st.session_state.get("clear_count", 0) + 1
