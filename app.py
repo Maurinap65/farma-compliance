@@ -176,7 +176,7 @@ def autoscroll(on):
           t.forEach(function(x){ if(x){ x.scrollTop = x.scrollHeight; } });
         }
         if(window.parent.__nxscroll){ clearInterval(window.parent.__nxscroll); }
-        window.parent.__nxscroll = setInterval(nxScrollAll, 500);
+        window.parent.__nxscroll = null;
         nxScrollAll();
         </script>"""
     else:
