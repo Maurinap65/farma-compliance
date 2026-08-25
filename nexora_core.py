@@ -1153,7 +1153,7 @@ def font_unicode_disponibile(font_dir=None):
     return any(os.path.exists(x) for x in p)
 
 
-def make_pdf(md, codice="", logo="assets/logo.png", font_dir=None):
+def _pdf_ricco(md, codice="", logo="assets/logo.png", font_dir=None):
     """
     Rispetto a NX6:
       - allineamento a sinistra (multi_cell giustificava, con fiumi bianchi);
@@ -1254,3 +1254,44 @@ def make_pdf(md, codice="", logo="assets/logo.png", font_dir=None):
             riga = _ascii_safe(riga)
         pdf.multi_cell(0, h, riga, align="L")
     return bytes(pdf.output())
+
+
+ULTIMO_ERRORE_PDF = ""
+
+
+def _pdf_semplice(md):
+    from fpdf import FPDF
+    p = FPDF()
+    p.set_auto_page_break(auto=True, margin=18)
+    p.add_page()
+    for r in md.split("\n"):
+        if not r.strip():
+            p.ln(2.5); continue
+        if r.startswith("# "):     p.set_font("Helvetica","B",14);   r,h = r[2:],6.5
+        elif r.startswith("## "):  p.set_font("Helvetica","B",10.5); r,h = r[3:],5.2
+        elif r.startswith("### "): p.set_font("Helvetica","B",9.5);  r,h = r[4:],4.8
+        else:                      p.set_font("Helvetica","",9);     h = 4.6
+        try:    p.multi_cell(0, h, _ascii_safe(r), align="L")
+        except TypeError: p.multi_cell(0, h, _ascii_safe(r))
+    o = p.output()
+    return o.encode("latin-1","replace") if isinstance(o, str) else bytes(o)
+
+
+def make_pdf(md, codice="", logo="assets/logo.png", font_dir=None):
+    global ULTIMO_ERRORE_PDF
+    ULTIMO_ERRORE_PDF = ""
+    import traceback
+    try:
+        d = _pdf_ricco(md, codice=codice, logo=logo, font_dir=font_dir)
+        if d:
+            return d
+        ULTIMO_ERRORE_PDF = "la versione ricca non ha prodotto dati"
+    except Exception as e:
+        ULTIMO_ERRORE_PDF = "ricca fallita: %s\n%s" % (e, traceback.format_exc())
+    try:
+        d = _pdf_semplice(md)
+        ULTIMO_ERRORE_PDF += "\n-> generato PDF semplice, senza logo e numerazione."
+        return d
+    except Exception as e:
+        ULTIMO_ERRORE_PDF += "\nanche semplice fallita: %s\n%s" % (e, traceback.format_exc())
+        return None
