@@ -885,6 +885,9 @@ def render_report(cr):
     with st.container(border=True):
         st.markdown(md)
     st.session_state["pdf_bytes"] = cr.get("pdf")
+    if not cr.get("pdf") and cr.get("pdf_errore"):
+        st.error("PDF non generato. Copia questo testo e mandalo in chat:")
+        st.code(cr["pdf_errore"])
     if st.session_state.get("pdf_bytes"):
         st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name=(st.session_state.get("report_code") or "report_compliance") + ".pdf", mime="application/pdf", key="dl_pdf")
 
@@ -1155,6 +1158,8 @@ with tab_check:
                     cr["fname"] = salva_report(data, "report_compliance")
                     st.write(f"   ✅ PDF salvato: {cr['fname']}")
                 except Exception as e:
+                    import traceback
+                    cr["pdf_errore"] = traceback.format_exc()
                     st.write(f"   ⚠️ PDF non generato: {e}")
 
                 status.update(label="✅ Analisi completata — report qui sotto", state="complete")
