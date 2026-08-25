@@ -884,7 +884,9 @@ def render_report(cr):
     st.session_state["nx_onepager"] = "SINTESI ESECUTIVA: " + str(c) + " critiche - " + str(w) + " avvertenze - " + str(mnt) + " mancanti - " + str(r) + " claim RCP."
     with st.container(border=True):
         st.markdown(md)
-    st.session_state["pdf_bytes"] = cr.get("pdf") or nexora_core.make_pdf(md, codice=code, logo="assets/logo.png")
+    if st.session_state.get("pdf_code") != code or not st.session_state.get("pdf_bytes"):
+        st.session_state["pdf_bytes"] = cr.get("pdf") or nexora_core.make_pdf(md, codice=code, logo="assets/logo.png")
+        st.session_state["pdf_code"] = code
     if not st.session_state["pdf_bytes"]: st.error("PDF: "+(nexora_core.ULTIMO_ERRORE_PDF or "causa sconosciuta"))
     if st.session_state["pdf_bytes"]:
         import base64 as _b
