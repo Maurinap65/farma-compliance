@@ -724,7 +724,12 @@ def _caporali(s):
     frase compariva come <<X>> in "Testo contestato", "X" in "Posizione" e 'X' in
     "Problema". Tre convenzioni in quattro righe.
     """
-    s = re.sub(r'"([^"\n]{2,200})"', "\u00ab\\1\u00bb", s)
+    def _wrap(m):
+        g = m.group(1).strip()
+        if g.startswith("\u00ab") and g.endswith("\u00bb"):
+            return g
+        return "\u00ab%s\u00bb" % g
+    s = re.sub(r'"([^"\n]{2,200})"', _wrap, s)
     s = re.sub(r'\u201c([^\u201d\n]{2,200})\u201d', "\u00ab\\1\u00bb", s)
     # apice singolo solo se non e' un'elisione (l'uso, un'attestazione)
     s = re.sub(r"(?<![A-Za-z\u00c0-\u00ff])'([^'\n]{2,200})'(?![A-Za-z\u00c0-\u00ff])",
@@ -978,6 +983,15 @@ def codice_report(rep, corpus, quando=None):
                                hashlib.sha256(seme.encode()).hexdigest()[:8].upper())
 
 
+def _traduci_status(st):
+    st = _s(st)
+    for k, v in STATUS_CLAIM.items():
+        if st.upper().startswith(k):
+            coda = st[len(k):].strip(" -\u2014:;")
+            return v + (" \u2014 " + coda if coda else "")
+    return st
+
+
 def _plurale(n, singolare, plurale):
     return "%d %s" % (n, singolare if n == 1 else plurale)
 
@@ -1053,7 +1067,7 @@ def render_md(rep, corpus, meta=None):
         for c_ in rep["claims_rcp"]:
             sez = (" \u2014 verificare sezioni %s" % c_["sezioni_rcp"]) if c_["sezioni_rcp"] else ""
             L.append("- \u00ab%s\u00bb \u2014 %s%s"
-                     % (c_["claim"], STATUS_CLAIM.get(c_["status"], c_["status"]), sez))
+                     % (c_["claim"], _traduci_status(c_["status"]), sez))
 
     if rep.get("note_informative"):
         L.append("## NOTE INFORMATIVE (segnalazioni al revisore, NON costituiscono contestazioni)")
