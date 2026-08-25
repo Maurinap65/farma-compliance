@@ -886,6 +886,9 @@ def render_report(cr):
         st.markdown(md)
     st.session_state["pdf_bytes"] = cr.get("pdf") or nexora_core.make_pdf(md, codice=code, logo="assets/logo.png")
     if not st.session_state["pdf_bytes"]: st.error("PDF: "+(nexora_core.ULTIMO_ERRORE_PDF or "causa sconosciuta"))
+    if st.session_state["pdf_bytes"]:
+        import base64 as _b
+        st.markdown("<a download=\""+(code or "report")+".pdf\" href=\"data:application/pdf;base64,"+_b.b64encode(st.session_state["pdf_bytes"]).decode()+"\">Scarica PDF (link diretto)</a>", unsafe_allow_html=True)
     if not cr.get("pdf") and cr.get("pdf_errore"):
         st.error("PDF non generato. Copia questo testo e mandalo in chat:")
         st.code(cr["pdf_errore"])
