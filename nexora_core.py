@@ -715,7 +715,12 @@ def _gia_detto(nuovo, esistente, soglia=0.6):
 def _minuscola_iniziale(t):
     """Abbassa solo la prima lettera: preserva acronimi come INN, AIC, RCP."""
     t = _s(t)
-    return (t[0].lower() + t[1:]) if t else t
+    if not t:
+        return t
+    prima = t.split()[0]
+    if prima.isupper() and len(prima) > 1:
+        return t
+    return t[0].lower() + t[1:]
 
 
 def _caporali(s):

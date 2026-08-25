@@ -115,6 +115,23 @@ Comparire in claims_rcp NON sostituisce il rilievo: un'affermazione vietata rest
 ## NOTE INFORMATIVE
 Servono a segnalare al revisore fatti che non sono contestazioni. Non duplicano rilievi gia' presenti. Non contengono formule di riempimento. Vanno in nota, non fra i rilievi, i difetti che reggono solo su un'ipotesi ("potrebbe", "in assenza di", "anche se autorizzato") e quelli privi di una chiave dell'elenco.
 
+## CHECKLIST DI COPERTURA (percorrila sempre, prima di chiudere)
+Per ognuna di queste domande, se la risposta e' si' deve esistere un rilievo. Non saltarne nessuna.
+1. Il prodotto e' definito medicinale in modo esplicito? Se no: violazione, art116_c1_a, quote vuota, intero materiale.
+2. Il materiale tace su effetti indesiderati, controindicazioni o precauzioni? Se si': violazione, art114_c3_a, quote vuota, intero materiale. E' un rilievo autonomo, distinto dai claim di assenza di effetti collaterali.
+3. Compare un primato, un superlativo o un confronto con altri prodotti? art117_c1_b.
+4. Compare una raccomandazione di medici, farmacisti, scienziati o personaggi noti? art117_c1_f.
+5. Compare una testimonianza o un attestato di guarigione o di esito? art117_c1_l.
+6. Compare un aggettivo o una formula di sicurezza assoluta? art114_c3_a.
+7. Il materiale nomina gusto, sapore, gradevolezza, formato accattivante? Allora esiste SEMPRE un'avvertenza art117_c1_g: e' una valutazione che dipende dal layout, e proprio per questo va segnalata, non omessa.
+8. L'indicazione terapeutica copre piu' condizioni o e' ambigua? Allora esiste SEMPRE un'avvertenza art117_c1_i.
+9. Manca uno dei quattro contenuti obbligatori? Un elemento mancante ciascuno: art116_c1_b1, art116_c1_b2, art116_c1_b3, art118_c1.
+Le avvertenze dei punti 7 e 8 non sono ipotesi da rinviare in nota: sono rilievi la cui chiusura richiede una fonte esterna. La regola sulle ipotesi riguarda solo i casi in cui non sai se una norma si applichi affatto.
+
+## PRECISIONE DELLA CONTESTAZIONE
+- Contesta solo cio' che la norma citata dice davvero. L'art117_c1_b copre il primato, la superiorita' e l'assenza di reazioni avverse: NON copre la promessa di un tempo di guarigione. Un claim temporale va in claims_rcp e, se attribuito a un paziente, in art117_c1_l.
+- L'azione deve nominare l'oggetto: "ELIMINARE il claim di primato", non "ELIMINARE l'intera affermazione". Due rilievi diversi non possono avere la stessa azione.
+
 ## FUORI AMBITO
 Se il materiale non e' pubblicita' di un medicinale presso il pubblico, restituisci stato_complessivo OUT_OF_SCOPE, liste vuote e una nota che spiega perche'."""
 
