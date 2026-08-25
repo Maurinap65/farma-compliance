@@ -361,7 +361,7 @@ def _estrai_chiavi_da_testo(v):
 
     for m in re.finditer(_RE_ART % "116", t):
         c = _coda(t, m.end(), ["113", "114", "117", "118", "119"])
-        for N in re.findall(r"lett(?:era|ere)?\.?\s*b\)?[\s.]*(?:n\.?|numero)?\s*([123])\b", c):
+        for N in re.findall(r"lett(?:era|ere)?\.?\s*b\)?[\s.,;]*(?:n\.?|numero)?\s*([123])\b", c):
             ks.append("art116_c1_b" + N)
         if re.search(r"lett(?:era|ere)?\.?\s*a\)?\b", c):
             ks.append("art116_c1_a")
@@ -726,7 +726,7 @@ def _caporali(s):
     """
     def _wrap(m):
         g = m.group(1).strip()
-        if g.startswith("\u00ab") and g.endswith("\u00bb"):
+        if "\u00ab" in g or "\u00bb" in g:
             return g
         return "\u00ab%s\u00bb" % g
     s = re.sub(r'"([^"\n]{2,200})"', _wrap, s)
@@ -1189,6 +1189,10 @@ def _pdf_ricco(md, codice="", logo="assets/logo.png", font_dir=None):
         percorsi.insert(0, os.path.join(font_dir, "DejaVuSans.ttf"))
         percorsi_b.insert(0, os.path.join(font_dir, "DejaVuSans-Bold.ttf"))
 
+    for _c in ([logo] if logo else []) + ["assets/logo.png", "logo.png", "static/logo.png", "img/logo.png"]:
+        if _c and os.path.exists(_c):
+            logo = _c
+            break
     logo_ok = bool(logo) and os.path.exists(logo)
     # Logo allineato al margine destro. La larghezza si ricava dalle proporzioni
     # reali dell'immagine, cosi' il bordo destro resta allineato al testo
