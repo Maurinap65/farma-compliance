@@ -1,52 +1,37 @@
-# DATA_VIGENZA: 23/08/2026
+# DATA_VIGENZA: 25/08/2026
 # FONTE: Normattiva - D.Lgs 219/2006, testo consolidato
 # NOTA: incollare qui il testo LETTERALE. Nessuna parafrasi.
 
 [KEY art114_c2]
-La pubblicità di un medicinale è conforme al riassunto delle caratteristiche del prodotto.
-
+Tutti gli elementi della pubblicità di un medicinale devono essere conformi alle informazioni che figurano nel riassunto delle caratteristiche del prodotto.
 [KEY art114_c3_a]
-La pubblicità di un medicinale deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprietà.
-
+La pubblicità di un medicinale: a) deve favorire l'uso razionale del medicinale, presentandolo in modo obiettivo e senza esagerarne le proprietà;
 [KEY art114_c3_b]
-La pubblicità di un medicinale non può essere ingannevole.
-
+La pubblicità di un medicinale: b) non può essere ingannevole.
 [KEY art116_c1_a]
-La pubblicità di un medicinale presso il pubblico è realizzata in modo che la natura pubblicitaria del messaggio è evidente e il prodotto è chiaramente identificato come medicinale.
-
+Fatte salve le disposizioni dell'articolo 115, la pubblicità di un medicinale presso il pubblico è realizzata in modo che la natura pubblicitaria del messaggio è evidente e il prodotto è chiaramente identificato come medicinale.
 [KEY art116_c1_b1]
-la denominazione del medicinale e la denominazione comune della sostanza attiva;
-
+la denominazione del medicinale e la denominazione comune della sostanza attiva; l'indicazione di quest'ultima non è obbligatoria se il medicinale è costituito da più sostanze attive;
 [KEY art116_c1_b2]
 le informazioni indispensabili per un uso corretto del medicinale;
 
 [KEY art116_c1_b3]
-un invito esplicito e chiaro a leggere attentamente le avvertenze figuranti, a seconda dei casi, nel foglio illustrativo o sull'imballaggio esterno.
-
+un invito esplicito e chiaro a leggere attentamente le avvertenze figuranti, a seconda dei casi, nel foglio illustrativo o sull'imballaggio esterno; nella pubblicità scritta l'invito deve risultare facilmente leggibile dal normale punto d'osservazione; nella pubblicità sulla stampa quotidiana e periodica deve essere, comunque, scritto con caratteri di dimensioni non inferiori al corpo nove.
 [KEY art117_c1_b]
-induca a ritenere che gli effetti derivanti dall'assunzione del medicinale siano garantiti, non siano accompagnati da reazioni avverse o siano superiori o pari a quelli di un altro trattamento o medicinale;
-
+La pubblicità presso il pubblico di un medicinale non può contenere alcun elemento che: b) induce a ritenere l'efficacia del medicinale priva di effetti indesiderati o superiore o pari ad un altro trattamento o ad un altro medicinale;
 [KEY art117_c1_f]
-comprenda una raccomandazione di scienziati, di operatori sanitari o di persone largamente note al pubblico;
-
+La pubblicità presso il pubblico di un medicinale non può contenere alcun elemento che: f) comprende una raccomandazione di scienziati, di operatori sanitari o di persone largamente note al pubblico;
 [KEY art117_c1_g]
-assimili il medicinale ad un prodotto alimentare, ad un prodotto cosmetico o ad un altro prodotto di consumo;
-
+La pubblicità presso il pubblico di un medicinale non può contenere alcun elemento che: g) assimila il medicinale ad un prodotto alimentare, ad un prodotto cosmetico o ad un altro prodotto di consumo;
 [KEY art117_c1_i]
-possa indurre ad una errata autodiagnosi;
-
+La pubblicità presso il pubblico di un medicinale non può contenere alcun elemento che: i) può indurre ad una errata autodiagnosi;
 [KEY art117_c1_l]
-faccia riferimento, in termini impropri, allarmistici o ingannevoli, ad attestati di guarigione;
-
+La pubblicità presso il pubblico di un medicinale non può contenere alcun elemento che: l) fa riferimento in modo improprio, impressionante o ingannevole a attestazioni di guarigione;
 [KEY art118_c1]
-Nessuna pubblicità di medicinali presso il pubblico può essere effettuata senza autorizzazione del Ministero della salute, ad eccezione: a) delle inserzioni pubblicitarie sulla stampa quotidiana o periodica che, ferme restando le disposizioni dell'articolo 116, comma 1, si limitano a riprodurre integralmente e senza modifiche le indicazioni, le controindicazioni, le opportune precauzioni d'impiego, le interazioni, le avvertenze speciali, gli effetti indesiderati descritti nel foglio illustrativo, con l'eventuale aggiunta di una fotografia o di una rappresentazione grafica dell'imballaggio esterno o del confezionamento primario del medicinale; b) delle fotografie o rappresentazioni grafiche dell'imballaggio esterno o del confezionamento primario dei medicinali apposte sui cartelli dei prezzi di vendita al pubblico e degli eventuali sconti praticati esposti da coloro che svolgono attività di fornitura al pubblico, limitatamente ai farmaci di cui all'articolo 5 del decreto-legge 4 luglio 2006, n. 223, convertito, con modificazioni, dalla legge 4 agosto 2006, n. 248.
+Nessuna pubblicità di medicinali presso il pubblico può essere effettuata senza autorizzazione del Ministero della salute, ad eccezione: a) delle inserzioni pubblicitarie sulla stampa quotidiana o periodica e sulle pagine web che, ferme restando le disposizioni dell'articolo 116, comma 1, si limitano a riprodurre integralmente e senza modifiche le indicazioni, le controindicazioni, le opportune precauzioni d'impiego, le interazioni, le avvertenze speciali, gli effetti indesiderati descritti nel foglio illustrativo, con l'eventuale aggiunta di una fotografia o di una rappresentazione grafica dell'imballaggio esterno o del confezionamento primario del medicinale; b) delle fotografie o rappresentazioni grafiche dell'imballaggio esterno o del confezionamento primario dei medicinali apposte sui cartelli dei prezzi di vendita al pubblico e degli eventuali sconti praticati esposti da coloro che svolgono attività di fornitura al pubblico, limitatamente ai farmaci di cui all'articolo 5 del decreto-legge 4 luglio 2006, n. 223, convertito, con modificazioni, dalla legge 4 agosto 2006, n. 248.
 [KEY art113_c1_a]
-per pubblicità di medicinali: qualsiasi forma di informazione, di ricerca di mercato e di incentivazione alla prescrizione, alla fornitura, alla vendita o al consumo di medicinali;
-
-
+Ai fini del presente titolo si intende per «pubblicità dei medicinali» qualsiasi azione d'informazione, di ricerca della clientela o di esortazione, intesa a promuovere la prescrizione, la fornitura, la vendita o il consumo di medicinali; essa comprende in particolare quanto segue: a) la pubblicità dei medicinali presso il pubblico;
 [KEY art117_c1_a]
-induca a ritenere che la visita medica o l'intervento chirurgico siano superflui, in particolare offrendo una diagnosi o suggerendo un trattamento per corrispondenza;
-
-
+La pubblicità presso il pubblico di un medicinale non può contenere alcun elemento che: a) fa apparire superflui la consultazione di un medico o l'intervento chirurgico, in particolare offrendo una diagnosi o proponendo una cura per corrispondenza;
 [KEY art118_c8]
 Decorsi quarantacinque giorni dalla presentazione della domanda diretta ad ottenere l'autorizzazione alla pubblicità di un medicinale, la mancata comunicazione al richiedente, da parte del Ministero della salute, della non accoglibilità della domanda costituisce, a tutti gli effetti, rilascio dell'autorizzazione richiesta. Nel messaggio pubblicitario deve, conseguentemente, essere riportata l'indicazione: «autorizzazione su domanda del ...» seguita dalla data in cui la domanda di autorizzazione è pervenuta al Ministero della salute.
