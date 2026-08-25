@@ -581,7 +581,7 @@ def ancora_posizioni(rep, testo):
     verificato che esistesse nel materiale. Qui si verifica SEMPRE: se il frammento
     non si trova, non si stampa.
     """
-    righe = [l for l in _s(testo).split("\n") if l.strip()]
+    righe = [l for l in _s(testo).split("\n") if l.strip() and not re.fullmatch(r"\[[^\]]*\]", l.strip())]
 
     def trova(q):
         qn = _norm(q)
