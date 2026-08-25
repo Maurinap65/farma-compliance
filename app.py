@@ -877,23 +877,14 @@ def set_topbar(msg):
 def render_report(cr):
     import nexora_core
     rep = cr.get("rep") or {}
-    corpus = nexora_core.Corpus.load(NX_KB)
-    meta = dict(cr)
-    code = nexora_core.codice_report(rep, corpus)
-    meta["codice"] = code
+    code = cr.get("codice") or ""
     st.session_state["report_code"] = code
-    md = nexora_core.render_md(rep, corpus, meta)
+    md = cr.get("md") or ""
     c, w, mnt, r = nexora_core.conta(rep)
     st.session_state["nx_onepager"] = "SINTESI ESECUTIVA: " + str(c) + " critiche - " + str(w) + " avvertenze - " + str(mnt) + " mancanti - " + str(r) + " claim RCP."
     with st.container(border=True):
         st.markdown(md)
-    if st.button("🖨️ Genera PDF", key="gen_pdf"):
-        pdf_bytes = nexora_core.make_pdf(md)
-        if pdf_bytes:
-            st.session_state["pdf_bytes"] = pdf_bytes
-        else:
-            st.error("PDF non generato: libreria non disponibile")
-        st.rerun()
+    st.session_state["pdf_bytes"] = cr.get("pdf")
     if st.session_state.get("pdf_bytes"):
         st.download_button("⬇️ Scarica PDF", st.session_state["pdf_bytes"], file_name=(st.session_state.get("report_code") or "report_compliance") + ".pdf", mime="application/pdf", key="dl_pdf")
 
@@ -1138,19 +1129,26 @@ with tab_check:
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
                 import nexora_core
+                NX_STRICT = False
                 corpus = nexora_core.Corpus.load(NX_KB)
                 if corpus.warnings:
                     st.warning("⚠️ Corpus: " + " ".join(corpus.warnings))
                 try:
-                    rep, _probs, corpus = nexora_core.pipeline(rep, _user_text(), corpus=corpus, strict=True)
+                    rep, _probs, corpus = nexora_core.pipeline(rep, content_send, corpus=corpus, strict=NX_STRICT)
                 except nexora_core.ReportNonValido as e:
                     st.error("🛑 BUILD FALLITA - controlli automatici:\n" + "\n".join(e.problemi))
                     st.stop()
-                cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": _user_text()}
+                cr = {"rep": rep, "source_desc": source_desc, "not_analyzed": not_analyzed, "created": time.time(), "model": modello, "ad_text": content_send}
                 try:
-                    _meta = {"source_desc": source_desc, "not_analyzed": not_analyzed}
-                    _md = nexora_core.render_md(rep, corpus, _meta)
-                    data = nexora_core.make_pdf(_md)
+                    from datetime import datetime as _dt
+                    _quando = _dt.fromtimestamp(cr["created"])
+                    _codice = nexora_core.codice_report(rep, corpus, _quando)
+                    cr["codice"] = _codice
+                    _meta = {"source_desc": source_desc, "not_analyzed": not_analyzed,
+                             "codice": _codice, "quando": _quando}
+                    cr["md"] = nexora_core.render_md(rep, corpus, _meta)
+                    data = nexora_core.make_pdf(cr["md"], codice=_codice,
+                                                logo="assets/logo.png")
                     if not data:
                         raise RuntimeError("fpdf2 non disponibile")
                     cr["pdf"] = data
