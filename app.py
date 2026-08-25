@@ -1135,7 +1135,7 @@ with tab_check:
                 st.write("📄 **Fase 4/4:** Generazione del report PDF...")
                 set_topbar("📄 Fase 4/4 — Generazione report PDF")
                 import nexora_core
-                NX_STRICT = False
+                NX_STRICT = True
                 corpus = nexora_core.Corpus.load(NX_KB)
                 if corpus.warnings:
                     st.warning("⚠️ Corpus: " + " ".join(corpus.warnings))
