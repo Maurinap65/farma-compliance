@@ -123,7 +123,7 @@ Per ognuna di queste domande, se la risposta e' si' deve esistere un rilievo. No
 4. Compare una raccomandazione di medici, farmacisti, scienziati o personaggi noti? art117_c1_f.
 5. Compare una testimonianza o un attestato di guarigione o di esito? art117_c1_l.
 6. Compare un aggettivo o una formula di sicurezza assoluta? art114_c3_a.
-7. Il materiale nomina gusto, sapore, gradevolezza, formato accattivante? Allora esiste SEMPRE un'avvertenza art117_c1_g: e' una valutazione che dipende dal layout, e proprio per questo va segnalata, non omessa.
+7. Il materiale enfatizza la gradevolezza del prodotto (gusto, sapore, aroma, "piace ai bambini")? Allora avvertenza art117_c1_g. NON si contesta la forma farmaceutica (sciroppo, compresse, bustine), che fa parte della denominazione del medicinale, ne' il formato o il volume della confezione: sono dati identificativi, non enfasi organolettica. Se il materiale non nomina alcuna caratteristica di gradevolezza, questa avvertenza non esiste.
 8. L'indicazione terapeutica copre piu' condizioni o e' ambigua? Allora esiste SEMPRE un'avvertenza art117_c1_i.
 9. Manca uno dei quattro contenuti obbligatori? Un elemento mancante ciascuno: art116_c1_b1, art116_c1_b2, art116_c1_b3, art118_c1.
 Le avvertenze dei punti 7 e 8 non sono ipotesi da rinviare in nota: sono rilievi la cui chiusura richiede una fonte esterna. La regola sulle ipotesi riguarda solo i casi in cui non sai se una norma si applichi affatto.
