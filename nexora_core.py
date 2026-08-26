@@ -156,10 +156,7 @@ class Corpus:
         if assenti:
             warn.append("Chiavi non fornite dal corpus (%d su %d): %s. Per queste il motore usa "
                         "i testi incorporati e NON dichiara alcuna vigenza."
-                        % (len(assenti), len(LABEL),
-                           ", ".join(ordina_chiavi(assenti)) if len(assenti) <= 4
-                           else "%s e altre %d" % (", ".join(ordina_chiavi(assenti)[:3]),
-                                                   len(assenti) - 3)))
+                        % (len(assenti), len(LABEL), ", ".join(ordina_chiavi(assenti))))
 
         return cls(norme, data, origine=path, warnings=warn, da_file=da_file)
 
@@ -218,10 +215,15 @@ class Corpus:
 # ----------------------------------------------------------------------------
 
 CRITICA, AVVERTENZA, MANCANTE = "critica", "avvertenza", "mancante"
-_RANK = {CRITICA: 3, AVVERTENZA: 2, MANCANTE: 1}
+# Quarto registro: esito SOSPESO. Non e' un accertamento di non conformita', e'
+# un elemento la cui ammissibilita' dipende da una fonte che il sistema non ha
+# (il RCP, un fatto amministrativo). Tenerlo fra le avvertenze faceva leggere
+# come contestazione cio' che e' solo una verifica da fare.
+VERIFICA = "verifica"
+_RANK = {CRITICA: 4, AVVERTENZA: 3, MANCANTE: 2, VERIFICA: 1}
 
 SEVERITA = {
-    "art114_c2":   AVVERTENZA,   # conformita' al RCP: dipende da documento assente
+    "art114_c2":   VERIFICA,     # conformita' al RCP: esito sospeso, non contestazione
     "art114_c3_a": CRITICA,
     "art114_c3_b": CRITICA,
     "art116_c1_a": CRITICA,
@@ -234,7 +236,11 @@ SEVERITA = {
     "art117_c1_g": AVVERTENZA,   # assimilazione: dipende dal layout grafico
     "art117_c1_i": AVVERTENZA,   # autodiagnosi: valutazione interpretativa
     "art117_c1_l": CRITICA,
-    "art118_c1":  MANCANTE,
+    # L'art. 118 c.1 impone di OTTENERE l'autorizzazione, non di esporne gli estremi:
+    # quell'obbligo di dicitura esiste solo nel c.8 (silenzio-assenso). E il sistema
+    # non puo' sapere se l'autorizzazione esista: e' un fatto amministrativo esterno
+    # al materiale. Quindi verifica pendente, mai elemento obbligatorio mancante.
+    "art118_c1":  VERIFICA,
 }
 
 # Rilievi che per natura riguardano l'intero materiale, non una riga.
@@ -259,6 +265,7 @@ AZIONE_DEFAULT = {
     CRITICA:    "Eliminare o correggere l'elemento contestato secondo quanto descritto nel problema.",
     AVVERTENZA: "Verificare l'elemento contestato rispetto alla fonte indicata prima di ogni divulgazione.",
     MANCANTE:   "Integrare l'elemento obbligatorio conformemente alla norma citata.",
+    VERIFICA:   "Verificare l'elemento contro la fonte indicata prima della divulgazione.",
 }
 
 STATI_AMMESSI = {"COMPLIANT", "NEEDS_REVISION", "CRITICAL_FAIL", "OUT_OF_SCOPE", "NO_FINDINGS"}
@@ -277,8 +284,11 @@ PROMPT_MARKERS = [
     "[{'type'", '[{"type"', "'type': 'text'", '"type": "text"',
     "sei un senior", "system prompt", "knowledge_chunks", "skill_prompt",
     "regole fondamentali", "<|", "assistant:", "role:",
-    "pseudonimizza=", "temperatura 0", "zero allucinazioni",
-    "note_informative", "norma_key", "stato_complessivo",
+    # Variabili del prompt uscite nel report del 25/08 dentro una nota informativa:
+    # "In conformita' alle regole di pseudonimizzazione (PSEUDONIMIZZA=0)...".
+    # E' meta-linguaggio di sistema in un documento destinato al cliente.
+    "pseudonimizza=", "temperatura 0", "zero allucinazioni", "note_informative",
+    "norma_key", "stato_complessivo",
 ]
 ANALOGIA_TERMS = [
     "per analogia", "in via estensiva", "applicabile in quanto compatibile",
@@ -581,7 +591,12 @@ def ancora_posizioni(rep, testo):
     verificato che esistesse nel materiale. Qui si verifica SEMPRE: se il frammento
     non si trova, non si stampa.
     """
-    righe = [l for l in _s(testo).split("\n") if l.strip() and not re.fullmatch(r"\[[^\]]*\]", l.strip())]
+    # Le righe che sono solo un'etichetta di sistema fra parentesi quadre
+    # ("[Testo inserito dall'utente]", "[Contenuto recuperato da ...]") non
+    # fanno parte del materiale del cliente: se contate, sfalsano di uno la
+    # numerazione di ogni rilievo rispetto al file che il revisore ha in mano.
+    righe = [l for l in _s(testo).split("\n")
+             if l.strip() and not re.fullmatch(r"\[[^\]]*\]", l.strip())]
 
     def trova(q):
         qn = _norm(q)
@@ -599,8 +614,14 @@ def ancora_posizioni(rep, testo):
 
     for v in rep["rilievi"]:
         quote_modello = _s(v.get("quote"))
-        doc_wide = v["severita"] == MANCANTE or (v["norma_key"] and set(v["norma_key"]) <= DOC_WIDE)
-        cand = [quote_modello] if doc_wide else ([quote_modello] + _virgolettati(v.get("problema")) + _virgolettati(v.get("posizione")))
+        doc_wide = v["severita"] == MANCANTE or (v["norma_key"]
+                                                 and set(v["norma_key"]) <= DOC_WIDE)
+        # Su un rilievo che riguarda l'intero materiale non si va a pescare frammenti
+        # dal testo del problema: il modello li cita come esempi, non come oggetto
+        # contestato, e ancorarcisi fa dire "Riga 5" a una contestazione document-wide.
+        cand = [quote_modello] if doc_wide else (
+            [quote_modello] + _virgolettati(v.get("problema"))
+            + _virgolettati(v.get("posizione")))
         cand = [c for c in cand if c]
         p, scelta = None, None
         for c in sorted(set(cand), key=len, reverse=True):
@@ -617,7 +638,7 @@ def ancora_posizioni(rep, testo):
         if quote_modello:
             v["_quote_non_verificata"] = quote_modello
             v["quote"] = ""
-        if v["severita"] == MANCANTE or (v["norma_key"] and set(v["norma_key"]) <= DOC_WIDE):
+        if v["severita"] in (MANCANTE, VERIFICA) or (v["norma_key"] and set(v["norma_key"]) <= DOC_WIDE):
             v["posizione"] = "Intero materiale"
         elif _s(v.get("posizione")):
             v["posizione"] = _s(v["posizione"])
@@ -638,7 +659,8 @@ def rimandi_incrociati(rep):
 
     ordinati = ordina(rep)
     numero = {id(v): (sev, i) for sev, lst in ordinati.items() for i, v in enumerate(lst, 1)}
-    nome = {CRITICA: "violazione critica", AVVERTENZA: "avvertenza", MANCANTE: "elemento mancante"}
+    nome = {CRITICA: "violazione critica", AVVERTENZA: "avvertenza",
+            MANCANTE: "elemento mancante", VERIFICA: "verifica pendente"}
 
     for q, gruppo in per_quote.items():
         if len(gruppo) < 2:
@@ -718,6 +740,8 @@ def _minuscola_iniziale(t):
     if not t:
         return t
     prima = t.split()[0]
+    # "ELIMINARE l'intera affermazione" non diventa "eLIMINARE": una parola tutta
+    # maiuscola e' voluta, non un inizio frase da abbassare.
     if prima.isupper() and len(prima) > 1:
         return t
     return t[0].lower() + t[1:]
@@ -732,6 +756,8 @@ def _caporali(s):
     """
     def _wrap(m):
         g = m.group(1).strip()
+        # il modello a volte mette virgolette dritte attorno a un testo gia'
+        # fra caporali: senza questo controllo esce <<<<testo>>>>
         if "\u00ab" in g or "\u00bb" in g:
             return g
         return "\u00ab%s\u00bb" % g
@@ -751,6 +777,55 @@ def pulisci(s):
     s = re.sub(r"\s{2,}", " ", s)
     s = re.sub(r"\s+([,.;:])", r"\1", s)
     return _caporali(s.strip())
+
+
+# Termini che segnalano la fattispecie dell'art. 117 c.1 lett. b: superiorita' o
+# parita' rispetto ad altri trattamenti, oppure assenza di reazioni avverse.
+# La lettera b NON copre la promessa di un tempo di guarigione ne' un generico
+# claim pubblicitario: se il rilievo non argomenta la fattispecie, la chiave cade.
+TERMINI_117B = [
+    "primat", "superior", "miglior", "n.1", "n. 1", "numero uno", "il piu",
+    "il più", "pari a", "rispetto ad altr", "altri trattament", "altro trattament",
+    "concorrent", "leader", "assenza di effett", "privo di effett", "priva di effett",
+    "senza effett", "nessun effett", "assenza di reazion", "priva di reazion",
+    "senza reazion", "nessuna reazion", "effetti indesiderati", "garantit",
+]
+
+
+def verifica_sussunzione(rep):
+    """La chiave non basta: la fattispecie deve risultare integrata dal rilievo.
+
+    Nasce da due contestazioni indifendibili osservate nei report reali:
+      - art114_c3_a usato come rilievo autonomo per l'OMISSIONE del profilo di
+        rischio. La norma impone presentazione obiettiva, non impone di elencare
+        gli effetti indesiderati: quell'obbligo di rinvio sta nell'art. 116 c.1
+        lett. b n.3. L'omissione diventa non obiettivita' solo in combinato con
+        un claim positivo, e allora il rilievo e' quel claim. Senza testo
+        contestato la chiave cade.
+      - art117_c1_b usato per qualunque claim pubblicitario. La lettera copre la
+        superiorita' e l'assenza di reazioni avverse: se il rilievo non la
+        argomenta, la chiave cade.
+    """
+    for v in rep["rilievi"]:
+        ks = list(v["norma_key"])
+        blob = (_s(v.get("titolo")) + " " + _s(v.get("problema")) + " "
+                + _s(v.get("quote"))).lower()
+        caduti = []
+        if "art114_c3_a" in ks and not _s(v.get("quote")):
+            ks.remove("art114_c3_a")
+            caduti.append("Art. 114 c.3 lett. a senza testo contestato")
+        if "art117_c1_b" in ks and not any(t in blob for t in TERMINI_117B):
+            ks.remove("art117_c1_b")
+            caduti.append("Art. 117 c.1 lett. b senza superiorita' argomentata")
+        if caduti:
+            v["norma_key"] = ks
+            v["_caduti"] = caduti
+            rep["note_informative"].append(
+                "[FATTISPECIE NON INTEGRATA] " + _s(v.get("titolo"))[:150] +
+                " \u2014 il sistema non ha potuto ricondurre il rilievo a %s: "
+                "l'elemento e' segnalato al revisore ma non contestato."
+                % " e a ".join(caduti))
+    return rep
 
 
 def degrada_senza_norma(rep):
@@ -812,8 +887,6 @@ def pulisci_note(rep):
             continue
         if any(m in s.lower() for m in PROMPT_MARKERS + ANALOGIA_TERMS):
             continue
-        if any(m in s.lower() for m in PROMPT_MARKERS):
-            continue
         if re.search(r"(?i)\bnon\s+(presenta|presentano|sono\s+presenti|risultano|vi\s+sono|"
                      r"\u00e8\s+present\w+|e'\s+present\w+|contiene|compaiono)\b.{0,60}"
                      r"(oltre a quell|particolar|ulterior|altri element|di rilievo|"
@@ -836,7 +909,7 @@ def pulisci_note(rep):
 
 
 def ordina(rep):
-    g = {CRITICA: [], AVVERTENZA: [], MANCANTE: []}
+    g = {CRITICA: [], AVVERTENZA: [], MANCANTE: [], VERIFICA: []}
     for v in rep["rilievi"]:
         g[v["severita"]].append(v)
     return g
@@ -845,13 +918,13 @@ def ordina(rep):
 def conta(rep):
     g = ordina(rep)
     return (len(g[CRITICA]), len(g[AVVERTENZA]), len(g[MANCANTE]),
-            len(rep.get("claims_rcp") or []))
+            len(rep.get("claims_rcp") or []), len(g[VERIFICA]))
 
 
 def stato_report(rep):
     """Lo stato dichiarato dal modello se ammissibile, altrimenti derivato dai
     conteggi. Un OUT_OF_SCOPE non viene mai sovrascritto."""
-    c, w, m, _ = conta(rep)
+    c, w, m, _, _v = conta(rep)
     if _s(rep.get("stato")).upper() == "OUT_OF_SCOPE":
         return "OUT_OF_SCOPE"
     if c:
@@ -893,7 +966,8 @@ def valida(rep, corpus, strict=True):
     scan({k: rep.get(k) for k in RESI if rep.get(k)}, "rep")
 
     g = ordina(rep)
-    nome = {CRITICA: "violazione critica", AVVERTENZA: "avvertenza", MANCANTE: "elemento mancante"}
+    nome = {CRITICA: "violazione critica", AVVERTENZA: "avvertenza",
+            MANCANTE: "elemento mancante", VERIFICA: "verifica pendente"}
     citate = set()
     for sev, lst in g.items():
         for i, v in enumerate(lst, 1):
@@ -944,6 +1018,8 @@ def pipeline(rep, testo, corpus=None, strict=True):
     rep = deduplica(rep)
     rep = classifica(rep)
     rep = cita_norme(rep, corpus)
+    rep = verifica_sussunzione(rep)
+    rep = cita_norme(rep, corpus)
     rep = degrada_senza_norma(rep)
     rep = unisci_documentwide(rep)
     rep = filtro_analogia(rep)
@@ -964,8 +1040,12 @@ def azioni_raccomandate(rep):
     g = ordina(rep)
     az = ["Sospendere immediatamente la divulgazione del materiale fino al completamento "
           "delle azioni correttive."]
+    # Azioni identiche su rilievi diversi si scrivono una volta sola, con tutti i
+    # rimandi. Prima uscivano come voci gemelle, parola per parola.
     visti = {}
-    for nome, lst in (("violazione critica", g[CRITICA]), ("elemento mancante", g[MANCANTE]), ("avvertenza", g[AVVERTENZA])):
+    for nome, lst in (("violazione critica", g[CRITICA]), ("elemento mancante", g[MANCANTE]),
+                      ("avvertenza", g[AVVERTENZA]),
+                      ("verifica pendente", g[VERIFICA])):
         for i, v in enumerate(lst, 1):
             k = _norm(v["azione"])
             rif = "%s n. %d" % (nome, i)
@@ -997,6 +1077,9 @@ def codice_report(rep, corpus, quando=None):
 
 
 def _traduci_status(st):
+    """Il modello a volte allega una nota al codice di stato
+    ("UNVERIFIABLE_RCP_NOT_IN_KB - Verificare RCP sezione 4.1"): si traduce il
+    codice e si conserva la nota, invece di stampare il codice grezzo."""
     st = _s(st)
     for k, v in STATUS_CLAIM.items():
         if st.upper().startswith(k):
@@ -1011,7 +1094,7 @@ def _plurale(n, singolare, plurale):
 
 def render_md(rep, corpus, meta=None):
     meta = meta or {}
-    c, w, m, r = conta(rep)
+    c, w, m, r, ver = conta(rep)
     g = ordina(rep)
     stato = stato_report(rep)
     fuori_ambito = stato == "OUT_OF_SCOPE"
@@ -1044,6 +1127,10 @@ def render_md(rep, corpus, meta=None):
                     _plurale(m, "elemento obbligatorio mancante",
                              "elementi obbligatori mancanti"),
                     _plurale(r, "claim richiede", "claim richiedono")))
+        if ver:
+            L.append("In sospeso: %s, il cui esito dipende da elementi non disponibili al "
+                     "sistema. Non costituiscono accertamento di non conformit\u00e0."
+                     % _plurale(ver, "elemento in verifica", "elementi in verifica"))
         if g[CRITICA]:
             prima = _prima_frase(g[CRITICA][0]["azione"]).rstrip(".")
             terza = ("3) integrare gli elementi obbligatori mancanti." if g[MANCANTE]
@@ -1074,6 +1161,20 @@ def render_md(rep, corpus, meta=None):
             L.append("### ELEMENTO MANCANTE %d \u2014 %s" % (i, v["titolo"]))
             L.append("Norma: " + v["norma_violata"])
             L.append("Azione richiesta: " + v["azione"])
+
+    if g[VERIFICA]:
+        L.append("## VERIFICHE PENDENTI")
+        L.append("Elementi il cui esito dipende da documenti o fatti non disponibili al "
+                 "sistema. NON sono contestazioni: fino alla verifica non \u00e8 accertata "
+                 "n\u00e9 la conformit\u00e0 n\u00e9 la difformit\u00e0.")
+        for i, v in enumerate(g[VERIFICA], 1):
+            L.append("### VERIFICA %d \u2014 %s" % (i, v["titolo"]))
+            L.append("Posizione: " + v["posizione"])
+            if v.get("quote"):
+                L.append("Elemento: \u00ab%s\u00bb" % v["quote"])
+            L.append("Oggetto della verifica: " + v["problema"])
+            L.append("Disposizione applicabile in caso di difformit\u00e0: " + v["norma_violata"])
+            L.append("Come chiuderla: " + v["azione"])
 
     if rep.get("claims_rcp"):
         L.append("## CLAIM DA VERIFICARE CONTRO RCP")
@@ -1202,7 +1303,8 @@ def _pdf_ricco(md, codice="", logo="assets/logo.png", font_dir=None):
         percorsi.insert(0, os.path.join(font_dir, "DejaVuSans.ttf"))
         percorsi_b.insert(0, os.path.join(font_dir, "DejaVuSans-Bold.ttf"))
 
-    for _c in ([logo] if logo else []) + ["assets/logo.png", "logo.png", "static/logo.png", "img/logo.png"]:
+    for _c in ([logo] if logo else []) + ["assets/logo.png", "logo.png",
+                                          "static/logo.png", "img/logo.png"]:
         if _c and os.path.exists(_c):
             logo = _c
             break
@@ -1210,7 +1312,7 @@ def _pdf_ricco(md, codice="", logo="assets/logo.png", font_dir=None):
     # Logo allineato al margine destro. La larghezza si ricava dalle proporzioni
     # reali dell'immagine, cosi' il bordo destro resta allineato al testo
     # qualunque logo venga messo in assets/.
-    ALT_LOGO = 18.0
+    ALT_LOGO = 26.0
     larg_logo = ALT_LOGO * 1.75
     if logo_ok:
         try:
@@ -1219,7 +1321,7 @@ def _pdf_ricco(md, codice="", logo="assets/logo.png", font_dir=None):
                 larg_logo = ALT_LOGO * (_i.width / float(_i.height))
         except Exception:
             pass
-    alt_header = 30 if logo_ok else 12
+    alt_header = 40 if logo_ok else 12
 
     class Report(FPDF):
         nx_font = "Helvetica"
@@ -1298,7 +1400,7 @@ def _pdf_semplice(md):
     for r in md.split("\n"):
         if not r.strip():
             p.ln(2.5); continue
-        if r.startswith("# "):     p.set_font("Helvetica","B",14);   r,h = r[2:],6.5
+        if r.startswith("# "):   p.set_font("Helvetica","B",14); r,h = r[2:],6.5
         elif r.startswith("## "):  p.set_font("Helvetica","B",10.5); r,h = r[3:],5.2
         elif r.startswith("### "): p.set_font("Helvetica","B",9.5);  r,h = r[4:],4.8
         else:                      p.set_font("Helvetica","",9);     h = 4.6
@@ -1309,6 +1411,8 @@ def _pdf_semplice(md):
 
 
 def make_pdf(md, codice="", logo="assets/logo.png", font_dir=None):
+    """Prova la versione ricca; se fallisce ripiega su quella semplice.
+    Meglio un PDF senza logo che nessun PDF."""
     global ULTIMO_ERRORE_PDF
     ULTIMO_ERRORE_PDF = ""
     import traceback
