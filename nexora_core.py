@@ -769,8 +769,15 @@ def _caporali(s):
     return s
 
 
+def _chiavi_in_etichette(s):
+    def r(m):
+        k = m.group(0)
+        return LABEL[k] if k in LABEL else ""
+    return RE_CHIAVE_NUDA.sub(r, s)
+
+
 def pulisci(s):
-    s = _s(s)
+    s = _chiavi_in_etichette(_s(s))
     s = s.replace("...", "\x00")
     s = re.sub(r"\.(\s*\.)+", ".", s)
     s = s.replace("\x00", "\u2026")
