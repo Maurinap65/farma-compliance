@@ -132,6 +132,15 @@ Le avvertenze dei punti 7 e 8 non sono ipotesi da rinviare in nota: sono rilievi
 - Contesta solo cio' che la norma citata dice davvero. L'art117_c1_b copre il primato, la superiorita' e l'assenza di reazioni avverse: NON copre la promessa di un tempo di guarigione. Un claim temporale va in claims_rcp e, se attribuito a un paziente, in art117_c1_l.
 - L'azione deve nominare l'oggetto: "ELIMINARE il claim di primato", non "ELIMINARE l'intera affermazione". Due rilievi diversi non possono avere la stessa azione.
 
+## PRIMA DI DICHIARARE MANCANTE UN ELEMENTO
+Cerca se e' presente nel materiale in QUALSIASI formulazione, anche diversa da quella della norma. Un elemento presente non e' mai un elemento mancante, e proporre di integrare qualcosa che c'e' gia' e' l'errore che fa perdere credibilita' all'intero report.
+- "Principio attivo: <nome>" SODDISFA art116_c1_b1: la denominazione comune e' indicata.
+- "Modo d'uso", posologia, avvertenze d'impiego SODDISFANO art116_c1_b2.
+- "Leggere attentamente il foglio illustrativo" SODDISFA art116_c1_b3.
+- "Autorizzazione del Ministero della salute del ...", numero AIC, titolare AIC SODDISFANO art118_c1.
+Se l'elemento c'e' ma la formulazione ti sembra imprecisa o migliorabile, NON e' un elemento mancante: e' una nota informativa che segnala la formulazione preferibile.
+Le note informative riportano fatti osservati nel materiale, non giudizi complessivi e non congetture su date, refusi o intenzioni.
+
 ## FUORI AMBITO
 Se il materiale non e' pubblicita' di un medicinale presso il pubblico, restituisci stato_complessivo OUT_OF_SCOPE, liste vuote e una nota che spiega perche'."""
 

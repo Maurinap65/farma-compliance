@@ -1045,8 +1045,13 @@ def pipeline(rep, testo, corpus=None, strict=True):
 
 def azioni_raccomandate(rep):
     g = ordina(rep)
-    az = ["Sospendere immediatamente la divulgazione del materiale fino al completamento "
-          "delle azioni correttive."]
+    az = []
+    if g[CRITICA]:
+        az.append("Sospendere immediatamente la divulgazione del materiale fino al "
+                  "completamento delle azioni correttive.")
+    elif g[MANCANTE]:
+        az.append("Non divulgare il materiale prima di aver integrato gli elementi "
+                  "obbligatori mancanti.")
     # Azioni identiche su rilievi diversi si scrivono una volta sola, con tutti i
     # rimandi. Prima uscivano come voci gemelle, parola per parola.
     visti = {}
