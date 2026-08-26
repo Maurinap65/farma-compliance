@@ -1138,6 +1138,12 @@ def render_md(rep, corpus, meta=None):
             L.append("In sospeso: %s, il cui esito dipende da elementi non disponibili al "
                      "sistema. Non costituiscono accertamento di non conformit\u00e0."
                      % _plurale(ver, "elemento in verifica", "elementi in verifica"))
+        if not (c or w or m):
+            L.append("Non \u00e8 emerso alcun rilievo rispetto ai materiali caricati e al "
+                     "corpus normativo dichiarato in intestazione. Questo non costituisce "
+                     "una dichiarazione di conformit\u00e0 del materiale: gli elementi "
+                     "elencati in calce come non verificati restano di competenza del "
+                     "revisore.")
         if g[CRITICA]:
             prima = _prima_frase(g[CRITICA][0]["azione"]).rstrip(".")
             terza = ("3) integrare gli elementi obbligatori mancanti." if g[MANCANTE]
