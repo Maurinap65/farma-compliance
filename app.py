@@ -879,7 +879,7 @@ def render_report(cr):
     code = cr.get("codice") or ""
     st.session_state["report_code"] = code
     md = cr.get("md") or ""
-    c, w, mnt, r = nexora_core.conta(rep)
+    c, w, mnt, r, ver = nexora_core.conta(rep)
     st.session_state["nx_onepager"] = "SINTESI ESECUTIVA: " + str(c) + " critiche - " + str(w) + " avvertenze - " + str(mnt) + " mancanti - " + str(r) + " claim RCP."
     with st.container(border=True):
         st.markdown(md)
